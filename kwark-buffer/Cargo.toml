@@ -1,0 +1,10 @@
+[package]
+name = "kwark-buffer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+normpath = "1.5.1"
+ropey = "1.6.1"
+thiserror.workspace = true

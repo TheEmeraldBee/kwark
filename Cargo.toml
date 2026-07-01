@@ -1,0 +1,17 @@
+[workspace]
+members = ["kwark",
+  "kwark-buffer",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+kwark-buffer = { version = "0.0.0", path = "./kwark-buffer" }
+
+# Error Handling
+thiserror = "2.0.18"
+anyhow = "1.0.102"

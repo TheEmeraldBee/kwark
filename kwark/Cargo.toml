@@ -1,0 +1,8 @@
+[package]
+name = "kwark"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kwark-buffer.workspace = true
