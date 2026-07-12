@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{Write, stdin, stdout};
 
 use kaon::prelude::*;
@@ -9,7 +10,12 @@ fn main() {
     let mut text = String::new();
     stdin().read_line(&mut text).expect("Line should have read");
 
-    let tokens = match Lexer::lex(&text) {
+    let registry = OpRegistry {
+        binary_ops: HashMap::new(),
+        unary_ops: HashMap::new(),
+    };
+
+    let tokens = match Lexer::lex(&text, &registry) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Lexing Failed:\n{}", e.point_at(&e, &text));

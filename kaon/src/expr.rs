@@ -1,14 +1,22 @@
-type BoxedExpr = Box<Expr>;
+use crate::{spanned::Spanned, value::Value};
 
+pub type SpannedExpr = Spanned<Box<Expr>>;
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
+    Null,
+    Literal(Value),
+
+    List(Vec<SpannedExpr>),
+
     Let {
         name: String,
-        body: BoxedExpr,
+        body: SpannedExpr,
     },
 
     Assign {
         name: String,
-        body: BoxedExpr,
+        body: SpannedExpr,
     },
 
     Local {
@@ -17,27 +25,42 @@ pub enum Expr {
 
     UnaryOp {
         op: String,
-        body: BoxedExpr,
+        body: SpannedExpr,
     },
 
     BinOp {
-        left: BoxedExpr,
+        left: SpannedExpr,
         op: String,
-        right: BoxedExpr,
+        right: SpannedExpr,
     },
 
     If {
-        cond: BoxedExpr,
-        then: BoxedExpr,
-        else_: Option<BoxedExpr>,
+        cond: SpannedExpr,
+        then: SpannedExpr,
+        else_: Option<SpannedExpr>,
     },
     For {
-        iterator: BoxedExpr,
-        body: BoxedExpr,
+        name: Option<Spanned<String>>,
+        iterator: SpannedExpr,
+        body: SpannedExpr,
+    },
+
+    Func {
+        args: Vec<Spanned<String>>,
+        body: SpannedExpr,
     },
 
     Then {
-        first: BoxedExpr,
-        next: BoxedExpr,
+        first: SpannedExpr,
+        next: SpannedExpr,
+    },
+
+    Block {
+        body: SpannedExpr,
+    },
+
+    Call {
+        body: SpannedExpr,
+        args: Vec<SpannedExpr>,
     },
 }

@@ -10,12 +10,17 @@ pub enum Token {
 
     Ident(String),
 
+    Let,
+
     For,
+    In,
     If,
     Else,
 
     Return,
     Break,
+
+    Fn,
 
     Ctrl(char),
     Op(String),
@@ -31,12 +36,17 @@ impl Display for Token {
 
             Self::Ident(i) => write!(f, "<ident>`{}`", i),
 
+            Self::Let => write!(f, "<let>"),
+
             Self::For => write!(f, "<for>"),
+            Self::In => write!(f, "<in>"),
             Self::If => write!(f, "<if>"),
             Self::Else => write!(f, "<else>"),
 
             Self::Return => write!(f, "<return>"),
             Self::Break => write!(f, "<break>"),
+
+            Self::Fn => write!(f, "<fn>"),
 
             Self::Ctrl(c) => write!(f, "<ctrl>`{}`", c),
             Self::Op(o) => write!(f, "<op>`{}`", o),

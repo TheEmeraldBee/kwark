@@ -4,12 +4,25 @@ pub mod lex;
 pub mod token;
 
 pub mod expr;
+pub mod parse;
+
+pub mod op_registry;
+
+pub mod value;
 
 pub mod spanned;
+
+pub mod engine;
+pub mod scope;
 
 pub mod prelude {
     pub use crate::error as kaon_error;
 
     pub use crate::lex::Lexer;
+    pub use crate::op_registry::OpRegistry;
+    pub use crate::parse::Parser;
     pub use crate::token::Token;
+
+    pub use crate::engine::Engine;
+    pub use crate::scope::Scope;
 }

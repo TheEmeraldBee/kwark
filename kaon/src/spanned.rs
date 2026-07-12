@@ -10,10 +10,24 @@ pub struct Spanned<T> {
     value: T,
 }
 
+impl<T: Clone> Clone for Spanned<T> {
+    fn clone(&self) -> Self {
+        Self {
+            start: self.start,
+            end: self.end,
+            value: self.value.clone(),
+        }
+    }
+}
+
 impl<T> Spanned<T> {
     /// Creates a new element that spans some text
     pub fn new(start: usize, end: usize, value: T) -> Self {
         Self { start, end, value }
+    }
+
+    pub fn into_inner(self) -> T {
+        self.value
     }
 
     /// Renders the given message followed by the source line and a caret span

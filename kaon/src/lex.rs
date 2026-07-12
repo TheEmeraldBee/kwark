@@ -1,10 +1,10 @@
-use crate::{error::Error, spanned::Spanned, token::Token};
+use crate::{error::Error, op_registry::OpRegistry, spanned::Spanned, token::Token};
 
 pub const CTRL_CHARS: &str = "{([])};,";
-pub const OP_CHARS: &str = "!-=+><|/$%";
+pub const OP_CHARS: &str = "!-=+><|/$%*";
 
 /// The primary way of turning text into readable tokens
-pub struct Lexer {
+pub struct Lexer<'src> {
     chars: Vec<char>,
     len: usize,
 
@@ -12,11 +12,16 @@ pub struct Lexer {
     cursor: usize,
 
     checkpoints: Vec<usize>,
+
+    registry: &'src OpRegistry,
 }
 
-impl Lexer {
+impl<'src> Lexer<'src> {
     /// Turns the passed text into a list of tokens
-    pub fn lex(text: &str) -> Result<Vec<Spanned<Token>>, Spanned<Error>> {
+    pub fn lex(
+        text: &str,
+        registry: &'src OpRegistry,
+    ) -> Result<Vec<Spanned<Token>>, Spanned<Error>> {
         let mut n = Self {
             chars: text.chars().collect(),
             len: text.chars().count(),
@@ -25,6 +30,8 @@ impl Lexer {
             cursor: 0,
 
             checkpoints: vec![],
+
+            registry,
         };
 
         n.lex_inner()
@@ -52,10 +59,11 @@ impl Lexer {
             return true;
         }
 
-        self.cursor += 1;
-        if self.cursor >= self.len {
+        if self.cursor + 1 >= self.len {
             return false;
         }
+
+        self.cursor += 1;
 
         true
     }
@@ -205,7 +213,17 @@ impl Lexer {
                             break;
                         }
 
-                        op.push(self.get());
+                        let candidate = format!("{op}{}", self.get());
+                        if !self
+                            .registry
+                            .op_strings()
+                            .any(|k| k.starts_with(&candidate))
+                        {
+                            self.back();
+                            break;
+                        }
+
+                        op = candidate;
                     }
 
                     res.push(self.create_checkpoint(Token::Op(op)))
@@ -232,12 +250,17 @@ impl Lexer {
                         "true" => Token::Bool(true),
                         "false" => Token::Bool(false),
 
+                        "let" => Token::Let,
+
                         "for" => Token::For,
+                        "in" => Token::In,
                         "if" => Token::If,
                         "else" => Token::Else,
 
                         "return" => Token::Return,
                         "break" => Token::Break,
+
+                        "fn" => Token::Fn,
 
                         _ => Token::Ident(ident),
                     };
@@ -254,11 +277,27 @@ impl Lexer {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use super::*;
+
+    fn registry() -> OpRegistry {
+        let mut binary_ops = HashMap::new();
+        binary_ops.insert("==".to_string(), ("eq".to_string(), 0));
+        binary_ops.insert("!=".to_string(), ("neq".to_string(), 0));
+
+        let mut unary_ops = HashMap::new();
+        unary_ops.insert("!".to_string(), "not".to_string());
+
+        OpRegistry {
+            binary_ops,
+            unary_ops,
+        }
+    }
 
     #[test]
     fn test_lex_ctrl() {
-        let tokens = Lexer::lex("()").unwrap();
+        let tokens = Lexer::lex("()", &registry()).unwrap();
         assert_eq!(
             tokens,
             vec![
@@ -270,20 +309,33 @@ mod test {
 
     #[test]
     fn test_lex_op() {
-        let tokens = Lexer::lex("== != ==>><").unwrap();
+        let tokens = Lexer::lex("== != !=!", &registry()).unwrap();
         assert_eq!(
             tokens,
             vec![
                 Spanned::new(0, 1, Token::Op("==".to_string())),
                 Spanned::new(3, 4, Token::Op("!=".to_string())),
-                Spanned::new(6, 11, Token::Op("==>><".to_string())),
+                Spanned::new(6, 7, Token::Op("!=".to_string())),
+                Spanned::new(8, 8, Token::Op("!".to_string())),
+            ]
+        )
+    }
+
+    #[test]
+    fn test_lex_op_stops_at_unknown_combo() {
+        let tokens = Lexer::lex("!!", &registry()).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Spanned::new(0, 0, Token::Op("!".to_string())),
+                Spanned::new(1, 1, Token::Op("!".to_string())),
             ]
         )
     }
 
     #[test]
     fn test_lex_ident() {
-        let tokens = Lexer::lex("true false for if else  hi,ec9ho").unwrap();
+        let tokens = Lexer::lex("true false for if else  hi,ec9ho", &registry()).unwrap();
         assert_eq!(
             tokens,
             vec![
@@ -294,7 +346,7 @@ mod test {
                 Spanned::new(18, 21, Token::Else),
                 Spanned::new(24, 25, Token::Ident("hi".to_string())),
                 Spanned::new(26, 26, Token::Ctrl(',')),
-                Spanned::new(27, 32, Token::Ident("ec9ho".to_string())),
+                Spanned::new(27, 31, Token::Ident("ec9ho".to_string())),
             ]
         )
     }
@@ -305,6 +357,7 @@ mod test {
             r#"
                 "abacadaba -> \" \" \n\t "
             "#,
+            &registry(),
         )
         .unwrap();
         assert_eq!(
@@ -318,6 +371,7 @@ mod test {
             r#"
                 "...\f..."
             "#,
+            &registry(),
         )
         .unwrap_err();
         assert_eq!(err, Spanned::new(21, 22, Error::UnknownEscape('f')));
