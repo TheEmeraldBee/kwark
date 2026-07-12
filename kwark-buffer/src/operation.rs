@@ -15,7 +15,7 @@ pub(crate) enum Operation {
 impl Operation {
     /// Applies the given operation to the buffer, returning the edit it performed
     pub(crate) fn apply(&self, buf: &mut Buffer) -> Result<()> {
-        let edit = match self {
+        match self {
             Self::Insert { line, col, text } => {
                 let idx = buf.rope.try_line_to_char(*line)? + col;
 
@@ -40,9 +40,9 @@ impl Operation {
 
                 buf.rope.try_remove(idx..(idx + len))?;
             }
-        };
+        }
         buf.version += 1;
-        Ok(edit)
+        Ok(())
     }
 
     /// Given the buffer, reverses an operation
