@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "kaon"
+version = "0.0.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "kwark"
 version = "0.0.0"
 dependencies = [
