@@ -1,0 +1,11 @@
+[package]
+name = "kaon-autocomplete"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kaon = { version = "0.0.0", path = "../kaon" }
+
+[dev-dependencies]
+rustyline = "18.0.1"

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::value::Value;
 
 /// A set of frames that are accessible for variables
+#[derive(Clone)]
 pub struct Scope {
     frames: Vec<Frame>,
 }
@@ -68,9 +69,20 @@ impl Scope {
             .rev()
             .find_map(|x| x.variables.get(&name))
     }
+
+    /// The name of every variable visible from the top of the stack
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        let mut seen = std::collections::HashSet::new();
+
+        self.frames
+            .iter()
+            .rev()
+            .flat_map(|frame| frame.variables.keys().map(String::as_str))
+            .filter(move |name| seen.insert(*name))
+    }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Frame {
     pub variables: HashMap<String, Value>,
 }

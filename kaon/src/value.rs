@@ -4,6 +4,36 @@ use crate::{error::Error, expr::SpannedExpr};
 
 pub type ValueIter = Rc<RefCell<dyn Iterator<Item = Value>>>;
 
+/// The kind of a [`Value`], independent of its data
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type {
+    Null,
+    Bool,
+    Int,
+    Float,
+    Str,
+    List,
+    Iter,
+    Method,
+}
+
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Type::Null => "null",
+            Type::Bool => "bool",
+            Type::Int => "int",
+            Type::Float => "float",
+            Type::Str => "str",
+            Type::List => "list",
+            Type::Iter => "iter",
+            Type::Method => "method",
+        };
+
+        write!(f, "{name}")
+    }
+}
+
 #[derive(Clone)]
 pub enum Value {
     Null,
@@ -22,20 +52,105 @@ pub enum Value {
 }
 
 impl Value {
-    /// The value as a bool, used for if/while conditions
-    pub fn truthy(&self) -> Result<bool, Error> {
+    /// This value's type
+    pub fn type_of(&self) -> Type {
         match self {
-            Value::Bool(b) => Ok(*b),
-            other => Err(Error::NotABool(other.clone())),
+            Value::Null => Type::Null,
+            Value::Bool(_) => Type::Bool,
+            Value::Int(_) => Type::Int,
+            Value::Float(_) => Type::Float,
+            Value::Str(_) => Type::Str,
+            Value::List(_) => Type::List,
+            Value::Iter(_) => Type::Iter,
+            Value::Method { .. } => Type::Method,
         }
     }
 
-    /// Turns the value into a rust iterator over values, used for `for x in ...`
+    /// Whether this value is null
+    pub fn null(&self) -> bool {
+        matches!(self, Value::Null)
+    }
+
+    /// Attempts to downcast the value into a boolean
+    pub fn bool(&self) -> Result<bool, Error> {
+        match self {
+            Value::Bool(b) => Ok(*b),
+            other => Err(Error::ExpectedType(Type::Bool, other.type_of())),
+        }
+    }
+
+    /// Attempts to downcast the value into an integer
+    pub fn int(&self) -> Result<i32, Error> {
+        match self {
+            Value::Int(i) => Ok(*i),
+            other => Err(Error::ExpectedType(Type::Int, other.type_of())),
+        }
+    }
+
+    /// Attempts to downcast the value into a float
+    pub fn float(&self) -> Result<f32, Error> {
+        match self {
+            Value::Float(x) => Ok(*x),
+            other => Err(Error::ExpectedType(Type::Float, other.type_of())),
+        }
+    }
+
+    /// Attepts to downcast the value into a str
+    pub fn str(&self) -> Result<&str, Error> {
+        match self {
+            Value::Str(s) => Ok(s.as_str()),
+            other => Err(Error::ExpectedType(Type::Str, other.type_of())),
+        }
+    }
+
+    /// Attempts to downcast the value into a list of generic items.
+    pub fn list(&self) -> Result<Vec<Value>, Error> {
+        match self {
+            Value::List(items) => Ok(items.clone()),
+            other => Err(Error::ExpectedType(Type::List, other.type_of())),
+        }
+    }
+
+    /// Starts by downcasting the value into a list, then applies the given function to every element in the list
+    pub fn mapped_list<T>(
+        &self,
+        mapper: impl Fn(&Value) -> Result<T, Error>,
+    ) -> Result<Vec<T>, Error> {
+        self.list()?.iter().map(mapper).collect()
+    }
+
+    /// Turns the value into an iterator over kaon values
     pub fn into_values(self) -> Result<Box<dyn Iterator<Item = Value>>, Error> {
         match self {
             Value::List(items) => Ok(Box::new(items.into_iter())),
-            Value::Iter(iter) => Ok(Box::new(std::iter::from_fn(move || iter.borrow_mut().next()))),
+            Value::Iter(iter) => Ok(Box::new(std::iter::from_fn(move || {
+                iter.borrow_mut().next()
+            }))),
             other => Err(Error::NotIterable(other)),
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Null => write!(f, "null"),
+            Value::Bool(b) => write!(f, "{b}"),
+            Value::Int(i) => write!(f, "{i}"),
+            Value::Float(x) => write!(f, "{x}"),
+            Value::Str(s) => write!(f, "{s}"),
+            Value::List(items) => {
+                write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{item}")?;
+                }
+                write!(f, "]")
+            }
+            Value::Iter(_) => write!(f, "<iter>"),
+            Value::Method { .. } => write!(f, "<method>"),
         }
     }
 }
@@ -65,19 +180,10 @@ impl PartialEq for Value {
             (Value::Str(a), Value::Str(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Iter(a), Value::Iter(b)) => Rc::ptr_eq(a, b),
-            (
-                Value::Method {
-                    args: a1,
-                    body: b1,
-                },
-                Value::Method {
-                    args: a2,
-                    body: b2,
-                },
-            ) => a1 == a2 && b1 == b2,
+            (Value::Method { args: a1, body: b1 }, Value::Method { args: a2, body: b2 }) => {
+                a1 == a2 && b1 == b2
+            }
             _ => false,
         }
     }
 }
-
-//TODO: Implement functions to auto-convert to values without having to match

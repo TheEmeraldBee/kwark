@@ -23,6 +23,8 @@ pub mod prelude {
     pub use crate::parse::Parser;
     pub use crate::token::Token;
 
-    pub use crate::engine::Engine;
+    pub use crate::value::*;
+
+    pub use crate::engine::*;
     pub use crate::scope::Scope;
 }

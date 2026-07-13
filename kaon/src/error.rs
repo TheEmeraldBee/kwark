@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Type, Value};
 
 /// A reason lexing, parsing or executing failed
 #[derive(Debug, Clone, thiserror::Error, PartialEq)]
@@ -27,14 +27,17 @@ pub enum Error {
     #[error("Unknown function: '{0}'")]
     UnknownFunction(String),
 
+    #[error("Unknown argument: '{0}'")]
+    UnknownArg(String),
+
     #[error("Value is not callable: {0:?}")]
     NotCallable(Value),
 
     #[error("Expected {expected} arguments, found {got}")]
     WrongArgCount { expected: usize, got: usize },
 
-    #[error("Expected a bool, found {0:?}")]
-    NotABool(Value),
+    #[error("Expected a value of type {0}, found a {1}")]
+    ExpectedType(Type, Type),
 
     #[error("Value is not iterable: {0:?}")]
     NotIterable(Value),

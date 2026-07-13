@@ -22,6 +22,18 @@ pub type ExprResult = Result<SpannedExpr, Spanned<Error>>;
 
 impl<'src> Parser<'src> {
     pub fn parse(registry: &OpRegistry, tokens: &'src [Spanned<Token>]) -> ExprResult {
+        let (tree, diagnostics) = Self::parse_recovering(registry, tokens);
+
+        match diagnostics.into_iter().next() {
+            Some(first) => Err(first),
+            None => Ok(tree),
+        }
+    }
+
+    pub fn parse_recovering(
+        registry: &OpRegistry,
+        tokens: &'src [Spanned<Token>],
+    ) -> (SpannedExpr, Vec<Spanned<Error>>) {
         let mut parser = Parser {
             tokens,
 
@@ -35,7 +47,7 @@ impl<'src> Parser<'src> {
 
         parser.advance();
 
-        parser.parse_inner()
+        parser.exprs_recovering()
     }
 
     fn advance(&mut self) -> bool {
@@ -149,12 +161,13 @@ impl<'src> Parser<'src> {
                     break;
                 }
 
+                parser.checkpoint();
+
                 if !parser.advance() {
+                    parser.remove_checkpoint();
                     trailing = true;
                     break;
                 }
-
-                parser.checkpoint();
 
                 match func(parser) {
                     Ok(item) => {
@@ -213,13 +226,46 @@ impl<'src> Parser<'src> {
         Ok(res)
     }
 
-    fn parse_inner(&mut self) -> ExprResult {
-        self.exprs()
-    }
+    fn exprs_recovering(&mut self) -> (SpannedExpr, Vec<Spanned<Error>>) {
+        let mut diagnostics = vec![];
+        let mut items = vec![];
+        let mut trailing = false;
 
-    fn exprs(&mut self) -> ExprResult {
-        let parse_list = Self::seperated(&Token::Ctrl(';'), true, Self::expr);
-        let (mut items, trailing) = parse_list(self)?;
+        loop {
+            let stmt_start = self.cursor;
+
+            match self.expr() {
+                Ok(item) => items.push(item),
+                Err(err) => {
+                    self.cursor = stmt_start;
+                    let end = self.skip_to_semicolon();
+
+                    items.push(Spanned::new(
+                        self.tokens[stmt_start].start,
+                        end,
+                        Box::new(Expr::Error(err.clone())),
+                    ));
+                    diagnostics.push(err);
+                }
+            }
+
+            if !self.advance() {
+                break;
+            }
+
+            if self.get() != &Token::Ctrl(';') {
+                diagnostics.push(self.create(Error::Expected(
+                    Token::Ctrl(';').to_string(),
+                    self.get().to_string(),
+                )));
+                continue;
+            }
+
+            if !self.advance() {
+                trailing = true;
+                break;
+            }
+        }
 
         if trailing {
             items.push(self.create(Box::new(Expr::Literal(Value::Null))));
@@ -228,7 +274,7 @@ impl<'src> Parser<'src> {
         let mut iter = items.into_iter().rev();
         let mut acc = iter
             .next()
-            .expect("seperated always yields at least one item");
+            .expect("exprs_recovering always yields at least one item");
 
         for item in iter {
             acc = Spanned::new(
@@ -241,89 +287,109 @@ impl<'src> Parser<'src> {
             );
         }
 
-        Ok(acc)
+        (acc, diagnostics)
+    }
+
+    fn skip_to_semicolon(&mut self) -> usize {
+        loop {
+            if self.cursor + 1 >= self.tokens.len() {
+                break;
+            }
+
+            if *self.tokens[self.cursor + 1] == Token::Ctrl(';') {
+                break;
+            }
+
+            self.cursor += 1;
+        }
+
+        self.tokens[self.cursor].end
     }
 
     fn expr(&mut self) -> ExprResult {
         self.checkpoint();
-        let out = Ok(match self.get() {
-            Token::Let => {
-                self.expect_advance("name")?;
 
-                let Token::Ident(name) = self.get().clone() else {
-                    return Err(self.expected("", self.get()));
-                };
+        let out = (|| -> ExprResult {
+            Ok(match self.get() {
+                Token::Let => {
+                    self.expect_advance("name")?;
 
-                self.skip(&Token::Op("=".to_string()), "expr")?;
+                    let Token::Ident(name) = self.get().clone() else {
+                        return Err(self.expected("name", self.get()));
+                    };
+                    let name = self.create(name);
 
-                let body = self.expr()?;
+                    self.skip(&Token::Op("=".to_string()), "expr")?;
 
-                self.create_checkpoint(Box::new(Expr::Let { name, body }))
-            }
+                    let body = self.expr()?;
 
-            Token::If => {
-                self.expect_advance("condition")?;
-                let cond = self.binary(0)?;
+                    self.create_checkpoint(Box::new(Expr::Let { name, body }))
+                }
 
-                self.expect_advance("block")?;
-                let then = self.block()?;
+                Token::If => {
+                    self.expect_advance("condition")?;
+                    let cond = self.binary(0)?;
 
-                self.checkpoint();
-                let else_ = if self.advance() && self.get() == &Token::Else {
-                    self.remove_checkpoint();
-                    self.expect_advance("if or block")?;
+                    self.expect_advance("block")?;
+                    let then = self.block()?;
 
-                    Some(if self.get() == &Token::If {
-                        self.expr()?
-                    } else {
-                        self.block()?
-                    })
-                } else {
-                    self.restore_checkpoint();
-                    None
-                };
+                    self.checkpoint();
+                    let else_ = if self.advance() && self.get() == &Token::Else {
+                        self.remove_checkpoint();
+                        self.expect_advance("if or block")?;
 
-                self.create_checkpoint(Box::new(Expr::If { cond, then, else_ }))
-            }
-
-            Token::For => {
-                self.expect_advance("iterator or loop variable")?;
-
-                self.checkpoint();
-                let name = match self.get().clone() {
-                    Token::Ident(n) => {
-                        let name_span = self.create(n);
-
-                        if self.advance() && self.get() == &Token::In {
-                            self.remove_checkpoint();
-                            self.expect_advance("expr")?;
-
-                            Some(name_span)
+                        Some(if self.get() == &Token::If {
+                            self.expr()?
                         } else {
-                            self.restore_checkpoint();
+                            self.block()?
+                        })
+                    } else {
+                        self.restore_checkpoint();
+                        None
+                    };
+
+                    self.create_checkpoint(Box::new(Expr::If { cond, then, else_ }))
+                }
+
+                Token::For => {
+                    self.expect_advance("iterator or loop variable")?;
+
+                    self.checkpoint();
+                    let name = match self.get().clone() {
+                        Token::Ident(n) => {
+                            let name_span = self.create(n);
+
+                            if self.advance() && self.get() == &Token::In {
+                                self.remove_checkpoint();
+                                self.expect_advance("expr")?;
+
+                                Some(name_span)
+                            } else {
+                                self.restore_checkpoint();
+                                None
+                            }
+                        }
+                        _ => {
+                            self.remove_checkpoint();
                             None
                         }
-                    }
-                    _ => {
-                        self.remove_checkpoint();
-                        None
-                    }
-                };
+                    };
 
-                let iterator = self.expr()?;
+                    let iterator = self.expr()?;
 
-                self.expect_advance("block")?;
-                let body = self.block()?;
+                    self.expect_advance("block")?;
+                    let body = self.block()?;
 
-                self.create_checkpoint(Box::new(Expr::For {
-                    name,
-                    iterator,
-                    body,
-                }))
-            }
+                    self.create_checkpoint(Box::new(Expr::For {
+                        name,
+                        iterator,
+                        body,
+                    }))
+                }
 
-            _ => self.binary(0)?,
-        });
+                _ => self.binary(0)?,
+            })
+        })();
 
         self.remove_checkpoint();
 
@@ -450,7 +516,10 @@ impl<'src> Parser<'src> {
             Token::Bool(b) => self.create(Box::new(Expr::Literal(Value::Bool(*b)))),
             Token::Str(s) => self.create(Box::new(Expr::Literal(Value::Str(s.clone())))),
 
-            Token::Ident(text) => self.create(Box::new(Expr::Local { name: text.clone() })),
+            Token::Ident(text) => {
+                let name = self.create(text.clone());
+                self.create(Box::new(Expr::Local { name }))
+            }
 
             Token::Ctrl('(') => {
                 self.wrapped(&Token::Ctrl('('), &Token::Ctrl(')'), "paren", Self::expr)?
@@ -577,17 +646,21 @@ mod test {
             Expr::Null => Expr::Null,
             Expr::Literal(v) => Expr::Literal(v),
 
+            Expr::Error(err) => Expr::Error(Spanned::new(0, 0, err.into_inner())),
+
             Expr::List(items) => Expr::List(items.into_iter().map(zero).collect()),
 
             Expr::Let { name, body } => Expr::Let {
-                name,
+                name: Spanned::new(0, 0, name.into_inner()),
                 body: zero(body),
             },
             Expr::Assign { name, body } => Expr::Assign {
-                name,
+                name: Spanned::new(0, 0, name.into_inner()),
                 body: zero(body),
             },
-            Expr::Local { name } => Expr::Local { name },
+            Expr::Local { name } => Expr::Local {
+                name: Spanned::new(0, 0, name.into_inner()),
+            },
 
             Expr::UnaryOp { op, body } => Expr::UnaryOp {
                 op,
@@ -670,7 +743,7 @@ mod test {
         assert_parses_to(
             "foo",
             Expr::Local {
-                name: "foo".to_string(),
+                name: sp("foo".to_string()),
             },
         );
     }
@@ -768,7 +841,7 @@ mod test {
         assert_parses_to(
             "let x = 1",
             Expr::Let {
-                name: "x".to_string(),
+                name: sp("x".to_string()),
                 body: sp(Box::new(Expr::Literal(Value::Int(1)))),
             },
         );
@@ -779,7 +852,7 @@ mod test {
         assert_parses_to(
             "x = 1",
             Expr::Assign {
-                name: "x".to_string(),
+                name: sp("x".to_string()),
                 body: sp(Box::new(Expr::Literal(Value::Int(1)))),
             },
         );
@@ -791,9 +864,9 @@ mod test {
         assert_parses_to(
             "x = y = 1",
             Expr::Assign {
-                name: "x".to_string(),
+                name: sp("x".to_string()),
                 body: sp(Box::new(Expr::Assign {
-                    name: "y".to_string(),
+                    name: sp("y".to_string()),
                     body: sp(Box::new(Expr::Literal(Value::Int(1)))),
                 })),
             },
@@ -832,7 +905,7 @@ mod test {
                 args: vec![sp("a".to_string()), sp("b".to_string())],
                 body: sp(Box::new(Expr::Block {
                     body: sp(Box::new(Expr::Local {
-                        name: "a".to_string(),
+                        name: sp("a".to_string()),
                     })),
                 })),
             },
@@ -915,5 +988,92 @@ mod test {
         };
         assert_eq!((first.start, first.end), (0, 0));
         assert_eq!((next.start, next.end), (3, 3));
+    }
+
+    fn recovering(src: &str) -> (SpannedExpr, Vec<Spanned<Error>>) {
+        let registry = registry();
+        let tokens = Lexer::lex(src, &registry).unwrap();
+        Parser::parse_recovering(&registry, &tokens)
+    }
+
+    #[test]
+    fn test_recovering_valid_input_has_no_diagnostics() {
+        let (_, diagnostics) = recovering("1 + 2");
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_recovering_truncated_let_yields_error_node_and_diagnostic() {
+        let (tree, diagnostics) = recovering("let x = ");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(matches!(**tree, Expr::Error(_)));
+    }
+
+    #[test]
+    fn test_recovering_trailing_operator_yields_error_node_and_diagnostic() {
+        let (tree, diagnostics) = recovering("1 + ");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(matches!(**tree, Expr::Error(_)));
+    }
+
+    #[test]
+    fn test_recovering_resyncs_at_semicolon_and_parses_the_rest() {
+        let (tree, diagnostics) = recovering("1 + ; 2");
+        assert_eq!(diagnostics.len(), 1);
+
+        let Expr::Then { first, next } = &**tree else {
+            panic!("expected Then");
+        };
+        assert!(matches!(***first, Expr::Error(_)));
+        assert_eq!(***next, Expr::Literal(Value::Int(2)));
+    }
+
+    #[test]
+    fn test_recovering_reports_every_broken_statement() {
+        let (_, diagnostics) = recovering("1 + ; 2 + ; 3");
+        assert_eq!(diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn test_recovering_missing_semicolon_between_statements_is_diagnosed() {
+        let (tree, diagnostics) = recovering("1 2");
+        assert_eq!(diagnostics.len(), 1);
+
+        let Expr::Then { first, next } = &**tree else {
+            panic!("expected Then");
+        };
+        assert_eq!(***first, Expr::Literal(Value::Int(1)));
+        assert_eq!(***next, Expr::Literal(Value::Int(2)));
+    }
+
+    #[test]
+    fn test_strict_parse_errors_on_missing_semicolon_between_statements() {
+        let registry = registry();
+        let tokens = Lexer::lex("1 2", &registry).unwrap();
+        let err = Parser::parse(&registry, &tokens).unwrap_err();
+        assert_eq!(
+            *err,
+            Error::Expected("<ctrl>`;`".to_string(), "<int>`2`".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_block_with_trailing_semicolon() {
+        assert_parses_to(
+            "{ 1; }",
+            Expr::Block {
+                body: sp(Box::new(Expr::Then {
+                    first: sp(Box::new(Expr::Literal(Value::Int(1)))),
+                    next: sp(Box::new(Expr::Null)),
+                })),
+            },
+        );
+    }
+
+    #[test]
+    fn test_recovering_still_parses_fully_valid_sequences() {
+        let (tree, diagnostics) = recovering("let x = 1; x + 1");
+        assert!(diagnostics.is_empty());
+        assert_eq!(zero(tree), zero(parse("let x = 1; x + 1")));
     }
 }

@@ -1,4 +1,4 @@
-use crate::{spanned::Spanned, value::Value};
+use crate::{error::Error, spanned::Spanned, value::Value};
 
 pub type SpannedExpr = Spanned<Box<Expr>>;
 
@@ -7,20 +7,22 @@ pub enum Expr {
     Null,
     Literal(Value),
 
+    Error(Spanned<Error>),
+
     List(Vec<SpannedExpr>),
 
     Let {
-        name: String,
+        name: Spanned<String>,
         body: SpannedExpr,
     },
 
     Assign {
-        name: String,
+        name: Spanned<String>,
         body: SpannedExpr,
     },
 
     Local {
-        name: String,
+        name: Spanned<String>,
     },
 
     UnaryOp {

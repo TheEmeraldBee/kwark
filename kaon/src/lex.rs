@@ -1,7 +1,7 @@
 use crate::{error::Error, op_registry::OpRegistry, spanned::Spanned, token::Token};
 
 pub const CTRL_CHARS: &str = "{([])};,";
-pub const OP_CHARS: &str = "!-=+><|/$%*";
+pub const OP_CHARS: &str = "!-=+><|&/$%*";
 
 /// The primary way of turning text into readable tokens
 pub struct Lexer<'src> {
@@ -56,7 +56,7 @@ impl<'src> Lexer<'src> {
     fn advance(&mut self) -> bool {
         if self.start {
             self.start = false;
-            return true;
+            return self.len > 0;
         }
 
         if self.cursor + 1 >= self.len {
@@ -293,6 +293,11 @@ mod test {
             binary_ops,
             unary_ops,
         }
+    }
+
+    #[test]
+    fn test_lex_empty_input_is_empty() {
+        assert_eq!(Lexer::lex("", &registry()).unwrap(), vec![]);
     }
 
     #[test]
