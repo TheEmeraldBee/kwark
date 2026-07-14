@@ -7,7 +7,7 @@ use std::{
 pub struct Spanned<T> {
     pub start: usize,
     pub end: usize,
-    value: T,
+    pub value: T,
 }
 
 impl<T: Clone> Clone for Spanned<T> {

@@ -239,7 +239,7 @@ impl<'src> Lexer<'src> {
                     let mut ident = c.to_string();
                     while self.advance() {
                         let ch = self.get();
-                        if !ch.is_alphanumeric() && ch != '_' {
+                        if !ch.is_alphanumeric() && ch != '_' && ch != ':' {
                             self.back();
                             break;
                         }

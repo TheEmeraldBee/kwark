@@ -143,11 +143,17 @@ impl<'src> Parser<'src> {
 
     fn seperated<T>(
         separator: &Token,
+        end: &Token,
         allow_trailing: bool,
 
         func: impl Fn(&mut Self) -> Result<T, Spanned<Error>>,
     ) -> impl Fn(&mut Self) -> Result<(Vec<T>, bool), Spanned<Error>> {
         move |parser| {
+            if parser.get() == end {
+                parser.back();
+                return Ok((vec![], false));
+            }
+
             let mut out = vec![func(parser)?];
             let mut trailing = false;
 
@@ -579,7 +585,7 @@ impl<'src> Parser<'src> {
             left,
             right,
             item_msg,
-            Self::seperated(separator, true, each),
+            Self::seperated(separator, right, true, each),
         )
     }
 

@@ -17,10 +17,12 @@ impl Default for Scope {
 }
 
 impl Scope {
+    /// Pushes a frame onto the stack, creating a new logical "scope" that inherits all parent scopes
     pub fn push_frame(&mut self) {
         self.frames.push(Frame::default())
     }
 
+    /// Removes a single frame from the system, not removing the bottom of the stack
     pub fn pop_frame(&mut self) {
         if self.frames.len() <= 1 {
             return;
@@ -38,7 +40,7 @@ impl Scope {
             .insert(name.into(), value);
     }
 
-    /// Sets an existing variable's value, value should exist in order to set, returns false if the value doesn't exist
+    /// Sets an existing variable's value, returns false if the value doesn't exist
     pub fn set(&mut self, name: impl Into<String>, value: Value) -> bool {
         let var = self.get_mut(name);
 
@@ -60,7 +62,7 @@ impl Scope {
             .find_map(|x| x.variables.get_mut(&name))
     }
 
-    /// Retrieves a value going down the stack to retrieve.
+    /// Retrieves a value from the scope
     pub fn get(&self, name: impl Into<String>) -> Option<&Value> {
         let name = name.into();
 
@@ -70,7 +72,7 @@ impl Scope {
             .find_map(|x| x.variables.get(&name))
     }
 
-    /// The name of every variable visible from the top of the stack
+    /// The name of every variable
     pub fn names(&self) -> impl Iterator<Item = &str> {
         let mut seen = std::collections::HashSet::new();
 

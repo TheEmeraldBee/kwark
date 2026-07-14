@@ -262,6 +262,19 @@ impl FunctionBuilder {
     }
 }
 
+pub struct NamespaceBuilder<'engine, Cx> {
+    name: String,
+    engine: &'engine mut Engine<Cx>,
+}
+
+impl<'engine, Cx> NamespaceBuilder<'engine, Cx> {
+    pub fn register(&mut self, name: impl Into<String>, func: Function<Cx>) -> &mut Self {
+        self.engine
+            .register(format!("{}::{}", self.name, name.into()), func);
+        self
+    }
+}
+
 pub struct Engine<Cx> {
     ops: OpRegistry,
 
@@ -484,8 +497,16 @@ impl<Cx> Engine<Cx> {
         engine
     }
 
-    pub fn register(&mut self, name: impl Into<String>, func: Function<Cx>) {
+    pub fn register(&mut self, name: impl Into<String>, func: Function<Cx>) -> &mut Self {
         self.methods.insert(name.into(), func);
+        self
+    }
+
+    pub fn namespace(&mut self, name: impl Into<String>) -> NamespaceBuilder<'_, Cx> {
+        NamespaceBuilder {
+            name: name.into(),
+            engine: self,
+        }
     }
 
     pub fn function(&self, name: &str) -> Option<&Function<Cx>> {

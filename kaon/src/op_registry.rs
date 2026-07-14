@@ -8,7 +8,7 @@ pub struct OpRegistry {
 }
 
 impl OpRegistry {
-    /// All operator strings this registry recognizes
+    /// All operators this registry recognizes
     pub fn op_strings(&self) -> impl Iterator<Item = &str> {
         self.binary_ops
             .keys()

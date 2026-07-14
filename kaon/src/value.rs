@@ -4,7 +4,7 @@ use crate::{error::Error, expr::SpannedExpr};
 
 pub type ValueIter = Rc<RefCell<dyn Iterator<Item = Value>>>;
 
-/// The kind of a [`Value`], independent of its data
+/// The kind of a [`Value`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Null,
@@ -34,6 +34,7 @@ impl std::fmt::Display for Type {
     }
 }
 
+/// A value representable by kaon
 #[derive(Clone)]
 pub enum Value {
     Null,
@@ -126,6 +127,12 @@ impl Value {
             Value::Iter(iter) => Ok(Box::new(std::iter::from_fn(move || {
                 iter.borrow_mut().next()
             }))),
+            Value::Str(s) => Ok(Box::new(
+                s.chars()
+                    .collect::<Vec<char>>()
+                    .into_iter()
+                    .map(|x| Value::Str(x.to_string())),
+            )),
             other => Err(Error::NotIterable(other)),
         }
     }

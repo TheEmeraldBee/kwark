@@ -15,12 +15,22 @@ fn main() {
             }),
     );
 
+    let mut namespace = engine.namespace("hello");
+    namespace.register(
+        "hi",
+        FunctionBuilder::new().build(|_args| {
+            println!("hi");
+            Ok(Value::Null)
+        }),
+    );
+
     engine
         .exec(
             r#"
             let x = 5;
             if x == 5 {
-                print("Hello, world")
+                print("Hello, world");
+                hello::hi();
             };
             "#,
             &mut scope,
