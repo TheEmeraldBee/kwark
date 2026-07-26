@@ -132,6 +132,42 @@ impl Buffer {
 
         Ok(())
     }
+
+    /// Returns a list of [`Span`]s based on a start and end (line, col) pair
+    pub fn viewport(&self, start: (usize, usize), end: (usize, usize)) -> Vec<Span> {
+        if start.0 > end.0 || start.1 > end.1 {
+            return vec![];
+        }
+
+        let mut lines = vec![];
+
+        for line in start.0..end.0 {
+            if line >= self.rope.len_lines() {
+                break;
+            }
+
+            let line_slice = self.rope.line(line);
+
+            let span_start = self.rope.line_to_char(line) + start.1.min(line_slice.len_chars());
+            let span_end = self.rope.line_to_char(line) + end.1.min(line_slice.len_chars());
+            let slice = self.rope.slice(span_start..span_end);
+
+            lines.push(Span {
+                start_char: span_start,
+                end_char: span_end,
+                text: slice.to_string(),
+            });
+        }
+
+        lines
+    }
+}
+
+pub struct Span {
+    pub start_char: usize,
+    pub end_char: usize,
+
+    pub text: String,
 }
 
 #[cfg(test)]

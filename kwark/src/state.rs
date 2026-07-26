@@ -53,6 +53,10 @@ impl Editor {
 
         Ok(())
     }
+
+    pub fn exec(&mut self, text: &str) -> Result<kaon::Value, kaon::Spanned<kaon::KaonError>> {
+        self.engine.exec(text, &mut self.scope, &mut self.state)
+    }
 }
 
 /// A type used to send CallbackFns through mpsc
@@ -83,8 +87,8 @@ impl State {
     }
 
     /// Gets a set of items out from the TypeMap
-    pub fn get<'a, T: GetManyAny<'a>>(&'a mut self) -> Result<T, StateError> {
-        T::get_many_any(&mut self.inner)
+    pub fn get<'a, T: GetManyAny<'a>>(&'a mut self) -> T {
+        T::get_many_any(&mut self.inner).expect("Types should be checked and inserted early")
     }
 
     /// Returns the sender for a callback fn to be put into a thread/event

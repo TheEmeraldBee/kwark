@@ -1,13 +1,17 @@
 use std::{io::stdout, time::Duration};
 
 use crossterm::event;
-use ratatui::widgets;
+use kaon::engine::{Args, FunctionBuilder};
+use kwark_buffer::{Buffer, BufferList};
+use ratatui::{text::Line, widgets::Paragraph};
 
 mod state;
 
 pub use state::*;
 
 mod events;
+
+pub use kaon::prelude as lang;
 
 pub fn init() -> Editor {
     Editor::default()
@@ -41,7 +45,28 @@ impl Editor {
     }
 
     fn run_inner(&mut self, mut term: ratatui::DefaultTerminal) -> anyhow::Result<()> {
-        let mut text = "Kwark".to_string();
+        self.state.insert(BufferList::default());
+
+        self.engine.namespace("buffer").register(
+            "open",
+            FunctionBuilder::new()
+                .arg(
+                    "path",
+                    "the path to the file you want to open",
+                    Some(lang::Type::Str),
+                )
+                .build(|args: &mut Args<'_, State>| {
+                    let path = args.str("path")?;
+
+                    let list = args.cx().get::<&mut BufferList>();
+                    list.file(path.into())
+                        .map_err(|e| kaon::error::Error::External(e.to_string()))?;
+
+                    Ok(lang::Value::Null)
+                }),
+        );
+
+        self.exec(r#"buffer::open("./Cargo.toml")"#).unwrap();
 
         loop {
             let event = match crossterm::event::poll(Duration::from_millis(50))? {
@@ -57,9 +82,8 @@ impl Editor {
                         if k.is_press() && k.code == event::KeyCode::Char('q') {
                             return Ok(());
                         }
-                        self.events.handle(&mut self.state, &events::Input(k))?;
+                        self.events.handle(&mut self.state, &mut events::Input(k))?;
                     }
-                    event::Event::Paste(pasted) => text = pasted,
                     _ => {}
                 }
             }
@@ -67,10 +91,17 @@ impl Editor {
             self.flush()?;
 
             term.draw(|frame| {
-                frame.render_widget(
-                    widgets::Paragraph::new(text.as_str()).centered(),
-                    frame.area(),
-                );
+                let bufs = self.state.get::<&mut BufferList>();
+
+                let lines = bufs
+                    .get(0)
+                    .unwrap()
+                    .viewport((0, 0), (100, 100))
+                    .into_iter()
+                    .map(|x| Line::raw(x.text))
+                    .collect::<Vec<_>>();
+
+                frame.render_widget(Paragraph::new(lines), frame.area());
             })?;
         }
     }

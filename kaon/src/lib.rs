@@ -16,7 +16,7 @@ pub mod engine;
 pub mod scope;
 
 pub mod prelude {
-    pub use crate::error as kaon_error;
+    pub use crate::error::Error as KaonError;
 
     pub use crate::lex::Lexer;
     pub use crate::op_registry::OpRegistry;
@@ -27,4 +27,6 @@ pub mod prelude {
 
     pub use crate::engine::*;
     pub use crate::scope::Scope;
+
+    pub use crate::spanned::Spanned;
 }

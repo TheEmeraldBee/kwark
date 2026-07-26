@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 indexmap = "2.14.0"
 thiserror.workspace = true
+anyhow.workspace = true

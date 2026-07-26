@@ -572,6 +572,7 @@ dependencies = [
 name = "kaon"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "indexmap",
  "thiserror 2.0.18",
 ]
@@ -613,6 +614,13 @@ dependencies = [
  "normpath",
  "ropey",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kwark-default"
+version = "0.0.0"
+dependencies = [
+ "kwark",
 ]
 
 [[package]]

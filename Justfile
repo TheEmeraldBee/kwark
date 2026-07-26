@@ -1,7 +1,7 @@
 export RUST_LOG := "debug"
 
 run:
-    cargo run -p kwark
+    cd flavors/kwark && cargo run
 
 repl:
     cargo run --example repl

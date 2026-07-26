@@ -8,7 +8,7 @@ use crate::state::State;
 mod event_kinds;
 pub use event_kinds::*;
 
-pub type EventSubscriber<T> = Box<dyn Fn(&mut State, &T) -> anyhow::Result<()>>;
+pub type EventSubscriber<T> = Box<dyn Fn(&mut State, &mut T) -> anyhow::Result<()>>;
 
 struct EventHandler<T> {
     subscribers: Vec<EventSubscriber<T>>,
@@ -23,7 +23,7 @@ impl<T> Default for EventHandler<T> {
 }
 
 impl<T> EventHandler<T> {
-    fn handle(&self, state: &mut State, event: &T) -> anyhow::Result<()> {
+    fn handle(&self, state: &mut State, event: &mut T) -> anyhow::Result<()> {
         for sub in &self.subscribers {
             sub(state, event)?;
         }
@@ -42,7 +42,7 @@ impl EventStorage {
     /// Register a subscriber for an event type
     pub fn on<T: 'static>(
         &mut self,
-        handler: impl Fn(&mut State, &T) -> anyhow::Result<()> + 'static,
+        handler: impl Fn(&mut State, &mut T) -> anyhow::Result<()> + 'static,
     ) {
         self.events
             .entry(TypeId::of::<T>())
@@ -53,8 +53,8 @@ impl EventStorage {
             .push(Box::new(handler));
     }
 
-    /// Handle an event
-    pub fn handle<T: 'static>(&mut self, state: &mut State, event: &T) -> anyhow::Result<()> {
+    /// Handles a single event
+    pub fn handle<T: 'static>(&mut self, state: &mut State, event: &mut T) -> anyhow::Result<()> {
         self.events
             .entry(TypeId::of::<T>())
             .or_insert(Box::new(EventHandler::<T>::default()))

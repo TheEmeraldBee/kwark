@@ -44,4 +44,17 @@ pub enum Error {
 
     #[error("Type mismatch: {0}")]
     TypeMismatch(String),
+
+    #[error("{0}")]
+    External(String),
+}
+
+pub trait IntoKaonError<T> {
+    fn into_kaon(self) -> Result<T, Error>;
+}
+
+impl<T, E: std::error::Error> IntoKaonError<T> for Result<T, E> {
+    fn into_kaon(self) -> Result<T, Error> {
+        self.map_err(|e| Error::External(e.to_string()))
+    }
 }
