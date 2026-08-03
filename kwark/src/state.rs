@@ -210,31 +210,11 @@ mod tests {
         state.insert("hi".to_string());
         state.insert(3.5f64);
 
-        let (a, b, c) = state
-            .get::<(&mut u32, &String, &mut f64)>()
-            .expect("all types registered");
+        let (a, b, c) = state.get::<(&mut u32, &String, &mut f64)>();
         *a += 1;
         assert_eq!(*a, 2);
         assert_eq!(b, "hi");
         *c += 0.5;
         assert_eq!(*c, 4.0);
-    }
-
-    #[test]
-    fn errors_on_missing_type() {
-        let mut state = new_state();
-
-        state.insert(1u32);
-        let err = state.get::<&String>().unwrap_err();
-        assert!(matches!(err, StateError::NotFound(_)));
-    }
-
-    #[test]
-    fn errors_on_conflicting_types() {
-        let mut state = new_state();
-
-        state.insert(1u32);
-        let err = state.get::<(&mut u32, &u32)>().unwrap_err();
-        assert!(matches!(err, StateError::ConflictingAccess(_)));
     }
 }

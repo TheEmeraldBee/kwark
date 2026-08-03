@@ -1,5 +1,5 @@
 [workspace]
-members = ["flavors/*","kaon", "kaon-autocomplete", "kwark", "kwark-buffer"]
+members = ["flavors/*","kaon", "kaon-autocomplete", "kwark", "kwark-buffer", "kwark-input"]
 resolver = "3"
 
 [workspace.package]
@@ -11,6 +11,7 @@ license = "MIT"
 kaon = { version = "0.0.0", path = "./kaon" }
 
 kwark-buffer = { version = "0.0.0", path = "./kwark-buffer" }
+kwark-input = { version = "0.0.0", path = "./kwark-input" }
 
 # Error Handling
 thiserror = "2.0.18"

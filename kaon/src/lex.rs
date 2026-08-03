@@ -250,6 +250,8 @@ impl<'src> Lexer<'src> {
                         "true" => Token::Bool(true),
                         "false" => Token::Bool(false),
 
+                        "null" => Token::Null,
+
                         "let" => Token::Let,
 
                         "for" => Token::For,

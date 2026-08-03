@@ -1,6 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{error::Error, expr::SpannedExpr};
+use crate::{
+    error::Error,
+    expr::{Expr, SpannedExpr},
+    spanned::Spanned,
+};
 
 pub type ValueIter = Rc<RefCell<dyn Iterator<Item = Value>>>;
 
@@ -101,6 +105,14 @@ impl Value {
         match self {
             Value::Str(s) => Ok(s.as_str()),
             other => Err(Error::ExpectedType(Type::Str, other.type_of())),
+        }
+    }
+
+    /// Checks the value is a method, and returns it unchanged
+    pub fn method(self) -> Result<(Vec<String>, Spanned<Box<Expr>>), Error> {
+        match self {
+            Value::Method { args, body } => Ok((args, body)),
+            other => Err(Error::ExpectedType(Type::Method, other.type_of())),
         }
     }
 

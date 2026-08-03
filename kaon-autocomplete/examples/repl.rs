@@ -132,7 +132,11 @@ fn main() -> Result<()> {
         let diagnostics = helper.engine.check_line(&line, &scope.borrow());
         if !diagnostics.is_empty() {
             for diagnostic in &diagnostics {
-                eprintln!("{}", diagnostic.message);
+                println!(
+                    "{}",
+                    Spanned::new(diagnostic.span.start, diagnostic.span.end, (),)
+                        .point_at(&diagnostic.message, &line)
+                );
             }
             continue;
         }

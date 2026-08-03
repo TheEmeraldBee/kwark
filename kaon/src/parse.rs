@@ -521,6 +521,7 @@ impl<'src> Parser<'src> {
             Token::Float(f) => self.create(Box::new(Expr::Literal(Value::Float(*f)))),
             Token::Bool(b) => self.create(Box::new(Expr::Literal(Value::Bool(*b)))),
             Token::Str(s) => self.create(Box::new(Expr::Literal(Value::Str(s.clone())))),
+            Token::Null => self.create(Box::new(Expr::Literal(Value::Null))),
 
             Token::Ident(text) => {
                 let name = self.create(text.clone());

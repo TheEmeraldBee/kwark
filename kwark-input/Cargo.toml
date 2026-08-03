@@ -1,17 +1,9 @@
 [package]
-name = "kwark"
+name = "kwark-input"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 kaon.workspace = true
-
-kwark-buffer.workspace = true
-kwark-input.workspace = true
-
-anyhow.workspace = true
-
-# Terminal
 crossterm.workspace = true
-ratatui.workspace = true

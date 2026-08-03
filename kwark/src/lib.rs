@@ -1,8 +1,9 @@
 use std::{io::stdout, time::Duration};
 
-use crossterm::event;
+use crossterm::event::{self, KeyModifiers};
 use kaon::engine::{Args, FunctionBuilder};
-use kwark_buffer::{Buffer, BufferList};
+use kwark_buffer::BufferList;
+use kwark_input::{Chord, InputState, Step};
 use ratatui::{text::Line, widgets::Paragraph};
 
 mod state;
@@ -12,6 +13,14 @@ pub use state::*;
 mod events;
 
 pub use kaon::prelude as lang;
+
+pub struct Running(pub bool);
+
+impl Running {
+    pub fn quit(&mut self) {
+        self.0 = false
+    }
+}
 
 pub fn init() -> Editor {
     Editor::default()
@@ -46,6 +55,18 @@ impl Editor {
 
     fn run_inner(&mut self, mut term: ratatui::DefaultTerminal) -> anyhow::Result<()> {
         self.state.insert(BufferList::default());
+        self.state.insert(InputState::new("normal"));
+        self.state.insert(Running(true));
+
+        self.engine.register(
+            "quit",
+            FunctionBuilder::new()
+                .desc("Quits the editor")
+                .build(|args: &mut Args<'_, State>| {
+                    args.cx().get::<&mut Running>().quit();
+                    Ok(lang::Value::Null)
+                }),
+        );
 
         self.engine.namespace("buffer").register(
             "open",
@@ -66,9 +87,36 @@ impl Editor {
                 }),
         );
 
-        self.exec(r#"buffer::open("./Cargo.toml")"#).unwrap();
+        self.engine.namespace("input")
+            .register(
+                "bind",
+                FunctionBuilder::new()
+                    .desc("Registers a bind for the given mode and key-sequence, and runs the given method on success")
+                    .arg("mode", "The mode that this binding applies to", Some(lang::Type::Str))
+                    .arg("chord", "The key presses that make up the keybind (list of strings)", Some(lang::Type::List))
+                    .arg("event", "The function to run on execution (takes 0 arguments)", Some(lang::Type::Method))
+                    .build(|args: &mut Args<'_, State>| {
+                        let mode = args.str("mode")?;
+                        let chord = args.mapped_list("chord", |v| v.str().map(str::to_string))?;
+                        let event = args.method("event")?;
 
-        loop {
+                        let cx = args.cx();
+                        let input = cx.get::<&mut InputState>();
+
+                        input.tree(mode).register(&[Chord { code: event::KeyCode::Char('c'), mods: KeyModifiers::CONTROL }], "hello", lang::Value::Method { args: event.0, body: event.1 });
+
+                        Ok(lang::Value::Null)
+            }));
+
+        self.exec(
+            r#"
+            buffer::open("./Cargo.toml");
+            input::bind("normal", ["ctrl-c"], fn() { quit() });
+        "#,
+        )
+        .unwrap();
+
+        while self.state.get::<&Running>().0 {
             let event = match crossterm::event::poll(Duration::from_millis(50))? {
                 true => Some(crossterm::event::read()?),
                 false => None,
@@ -79,16 +127,37 @@ impl Editor {
                     event::Event::FocusGained => {}
                     event::Event::FocusLost => {}
                     event::Event::Key(k) => {
-                        if k.is_press() && k.code == event::KeyCode::Char('q') {
-                            return Ok(());
-                        }
-                        self.events.handle(&mut self.state, &mut events::Input(k))?;
+                        match self.state.get::<&mut InputState>().step(Chord {
+                            code: k.code,
+                            mods: k.modifiers,
+                        }) {
+                            Step::Complete(c) => {
+                                let method =
+                                    c.method().expect("Value in input **should** be method");
+
+                                self.engine
+                                    .solve(&method.1, &mut self.scope, &mut self.state)
+                                    .expect("Should have worked");
+                            }
+                            _ => {}
+                        };
+                        // self.events.handle(&mut self.state, &mut events::Input(k))?;
                     }
                     _ => {}
                 }
             }
 
             self.flush()?;
+
+            // TODO: The Window:
+            // TODO: The window is made up of 3 major parts
+            // TODO: ---- TOP BAR ----
+            // TODO: WINDOWS & tab-bar
+            // TODO: --- BOTTOM BAR --
+            // TODO:
+            // TODO: The Bottom Bar is a set of text in the left, middle, and right that can be changed
+            // TODO: The Windows are either terminals or buffers that are rendered, each window also gets a tab-bar
+            // TODO: The Top Bar is also a set of left, middle, and right text that is fully customizable
 
             term.draw(|frame| {
                 let bufs = self.state.get::<&mut BufferList>();
@@ -104,5 +173,7 @@ impl Editor {
                 frame.render_widget(Paragraph::new(lines), frame.area());
             })?;
         }
+
+        Ok(())
     }
 }

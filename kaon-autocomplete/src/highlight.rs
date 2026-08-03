@@ -23,6 +23,7 @@ pub fn classify_tokens(source: &str, ops: &OpRegistry) -> Vec<Spanned<HighlightK
                 Token::Int(_) | Token::Float(_) => HighlightKind::Number,
                 Token::Str(_) => HighlightKind::StringLit,
                 Token::Bool(_) => HighlightKind::Bool,
+                Token::Null => HighlightKind::Number,
 
                 Token::Ident(_) => HighlightKind::Ident,
 

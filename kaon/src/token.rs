@@ -7,6 +7,7 @@ pub enum Token {
     Float(f32),
     Str(String),
     Bool(bool),
+    Null,
 
     Ident(String),
 
@@ -33,6 +34,7 @@ impl Display for Token {
             Self::Float(n) => write!(f, "<float>`{}`", n),
             Self::Str(s) => write!(f, "<str>`{}`", s.escape_default()),
             Self::Bool(b) => write!(f, "<bool>`{}`", b),
+            Self::Null => write!(f, "<null>"),
 
             Self::Ident(i) => write!(f, "<ident>`{}`", i),
 

@@ -604,6 +604,7 @@ dependencies = [
  "crossterm",
  "kaon",
  "kwark-buffer",
+ "kwark-input",
  "ratatui",
 ]
 
@@ -621,6 +622,14 @@ name = "kwark-default"
 version = "0.0.0"
 dependencies = [
  "kwark",
+]
+
+[[package]]
+name = "kwark-input"
+version = "0.0.0"
+dependencies = [
+ "crossterm",
+ "kaon",
 ]
 
 [[package]]

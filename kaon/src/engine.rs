@@ -98,6 +98,10 @@ impl<'a, Cx> Args<'a, Cx> {
         self.value(name)?.list()
     }
 
+    pub fn method(&mut self, name: &str) -> Result<(Vec<String>, SpannedExpr), Error> {
+        self.value(name)?.method()
+    }
+
     pub fn mapped_list<T>(
         &mut self,
         name: &str,
