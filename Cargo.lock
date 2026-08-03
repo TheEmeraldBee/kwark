@@ -630,6 +630,7 @@ version = "0.0.0"
 dependencies = [
  "crossterm",
  "kaon",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

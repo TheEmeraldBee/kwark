@@ -1,12 +1,35 @@
 use std::collections::HashMap;
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use kaon::value::Value;
+
+mod parse;
+
+pub use parse::{ParseError, parse_chord};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Chord {
     pub code: KeyCode,
     pub mods: KeyModifiers,
+}
+
+impl Chord {
+    /// Builds a chord, folding an uppercase `Char` into its lowercase form plus `SHIFT`
+    pub fn new(code: KeyCode, mods: KeyModifiers) -> Self {
+        match code {
+            KeyCode::Char(c) if c.is_uppercase() => Self {
+                code: KeyCode::Char(c.to_lowercase().next().unwrap_or(c)),
+                mods: mods | KeyModifiers::SHIFT,
+            },
+            _ => Self { code, mods },
+        }
+    }
+}
+
+impl From<KeyEvent> for Chord {
+    fn from(event: KeyEvent) -> Self {
+        Self::new(event.code, event.modifiers)
+    }
 }
 
 #[derive(Debug, Clone)]

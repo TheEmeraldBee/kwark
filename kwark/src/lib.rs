@@ -1,16 +1,16 @@
 use std::{io::stdout, time::Duration};
 
-use crossterm::event::{self, KeyModifiers};
+use crossterm::event;
 use kaon::engine::{Args, FunctionBuilder};
 use kwark_buffer::BufferList;
-use kwark_input::{Chord, InputState, Step};
+use kwark_input::{Chord, InputState, Step, parse_chord};
 use ratatui::{text::Line, widgets::Paragraph};
 
 mod state;
 
 pub use state::*;
 
-mod events;
+pub mod events;
 
 pub use kaon::prelude as lang;
 
@@ -23,10 +23,75 @@ impl Running {
 }
 
 pub fn init() -> Editor {
-    Editor::default()
+    let mut editor = Editor::default();
+    editor.init();
+    editor
 }
 
 impl Editor {
+    pub fn init(&mut self) {
+        self.state.insert(BufferList::default());
+        self.state.insert(InputState::new("normal"));
+        self.state.insert(Running(true));
+
+        self.engine.register(
+            "quit",
+            FunctionBuilder::new()
+                .desc("Quits the editor")
+                .build(|args: &mut Args<'_, State>| {
+                    args.cx().get::<&mut Running>().quit();
+                    Ok(lang::Value::Null)
+                }),
+        );
+
+        self.engine.namespace("buffer").register(
+            "open",
+            FunctionBuilder::new()
+                .arg(
+                    "path",
+                    "the path to the file you want to open",
+                    Some(lang::Type::Str),
+                )
+                .build(|args: &mut Args<'_, State>| {
+                    let path = args.str("path")?;
+
+                    let list = args.cx().get::<&mut BufferList>();
+                    let id = list
+                        .file(path.into())
+                        .map_err(|e| kaon::error::Error::External(e.to_string()))?;
+
+                    Ok(lang::Value::Int(id as i32))
+                }),
+        );
+
+        self.engine.namespace("input")
+            .register(
+                "bind",
+                FunctionBuilder::new()
+                    .desc("Registers a bind for the given mode and key-sequence, and runs the given method on success")
+                    .arg("mode", "The mode that this binding applies to", Some(lang::Type::Str))
+                    .arg("chord", "The key presses that make up the keybind (list of strings)", Some(lang::Type::List))
+                    .arg("event", "The function to run on execution (takes 0 arguments)", Some(lang::Type::Method))
+                    .build(|args: &mut Args<'_, State>| {
+                        let mode = args.str("mode")?;
+                        let chord = args.mapped_list("chord", |v| v.str().map(str::to_string))?;
+                        let event = args.method("event")?;
+
+                        let chord = chord
+                            .iter()
+                            .map(|s| parse_chord(s))
+                            .collect::<Result<Vec<Chord>, _>>()
+                            .map_err(|e| kaon::error::Error::External(e.to_string()))?;
+
+                        let cx = args.cx();
+                        let input = cx.get::<&mut InputState>();
+
+                        input.tree(mode).register(&chord, "hello", lang::Value::Method { args: event.0, body: event.1 });
+
+                        Ok(lang::Value::Null)
+            }));
+    }
+
     pub fn run(mut self) {
         let term = ratatui::init();
         crossterm::execute!(
@@ -54,68 +119,6 @@ impl Editor {
     }
 
     fn run_inner(&mut self, mut term: ratatui::DefaultTerminal) -> anyhow::Result<()> {
-        self.state.insert(BufferList::default());
-        self.state.insert(InputState::new("normal"));
-        self.state.insert(Running(true));
-
-        self.engine.register(
-            "quit",
-            FunctionBuilder::new()
-                .desc("Quits the editor")
-                .build(|args: &mut Args<'_, State>| {
-                    args.cx().get::<&mut Running>().quit();
-                    Ok(lang::Value::Null)
-                }),
-        );
-
-        self.engine.namespace("buffer").register(
-            "open",
-            FunctionBuilder::new()
-                .arg(
-                    "path",
-                    "the path to the file you want to open",
-                    Some(lang::Type::Str),
-                )
-                .build(|args: &mut Args<'_, State>| {
-                    let path = args.str("path")?;
-
-                    let list = args.cx().get::<&mut BufferList>();
-                    list.file(path.into())
-                        .map_err(|e| kaon::error::Error::External(e.to_string()))?;
-
-                    Ok(lang::Value::Null)
-                }),
-        );
-
-        self.engine.namespace("input")
-            .register(
-                "bind",
-                FunctionBuilder::new()
-                    .desc("Registers a bind for the given mode and key-sequence, and runs the given method on success")
-                    .arg("mode", "The mode that this binding applies to", Some(lang::Type::Str))
-                    .arg("chord", "The key presses that make up the keybind (list of strings)", Some(lang::Type::List))
-                    .arg("event", "The function to run on execution (takes 0 arguments)", Some(lang::Type::Method))
-                    .build(|args: &mut Args<'_, State>| {
-                        let mode = args.str("mode")?;
-                        let chord = args.mapped_list("chord", |v| v.str().map(str::to_string))?;
-                        let event = args.method("event")?;
-
-                        let cx = args.cx();
-                        let input = cx.get::<&mut InputState>();
-
-                        input.tree(mode).register(&[Chord { code: event::KeyCode::Char('c'), mods: KeyModifiers::CONTROL }], "hello", lang::Value::Method { args: event.0, body: event.1 });
-
-                        Ok(lang::Value::Null)
-            }));
-
-        self.exec(
-            r#"
-            buffer::open("./Cargo.toml");
-            input::bind("normal", ["ctrl-c"], fn() { quit() });
-        "#,
-        )
-        .unwrap();
-
         while self.state.get::<&Running>().0 {
             let event = match crossterm::event::poll(Duration::from_millis(50))? {
                 true => Some(crossterm::event::read()?),
@@ -127,10 +130,7 @@ impl Editor {
                     event::Event::FocusGained => {}
                     event::Event::FocusLost => {}
                     event::Event::Key(k) => {
-                        match self.state.get::<&mut InputState>().step(Chord {
-                            code: k.code,
-                            mods: k.modifiers,
-                        }) {
+                        match self.state.get::<&mut InputState>().step(Chord::from(k)) {
                             Step::Complete(c) => {
                                 let method =
                                     c.method().expect("Value in input **should** be method");

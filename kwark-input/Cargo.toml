@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 kaon.workspace = true
 crossterm.workspace = true
+thiserror.workspace = true

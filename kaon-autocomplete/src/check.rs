@@ -118,7 +118,7 @@ fn walk<Cx>(expr: &SpannedExpr, engine: &Engine<Cx>, scope: &mut Scope, out: &mu
         }
 
         Expr::Func { args, body } => {
-            scope.push_frame();
+            scope.push_blocking_frame();
             for arg in args {
                 scope.register(arg.clone().into_inner(), Value::Null);
             }

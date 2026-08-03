@@ -34,6 +34,10 @@ impl<'src> Parser<'src> {
         registry: &OpRegistry,
         tokens: &'src [Spanned<Token>],
     ) -> (SpannedExpr, Vec<Spanned<Error>>) {
+        if tokens.is_empty() {
+            return (Spanned::new(0, 0, Box::new(Expr::Null)), vec![]);
+        }
+
         let mut parser = Parser {
             tokens,
 
@@ -239,9 +243,13 @@ impl<'src> Parser<'src> {
 
         loop {
             let stmt_start = self.cursor;
+            let mut optional_semi = false;
 
             match self.expr() {
-                Ok(item) => items.push(item),
+                Ok(item) => {
+                    optional_semi = item.ends_in_block();
+                    items.push(item);
+                }
                 Err(err) => {
                     self.cursor = stmt_start;
                     let end = self.skip_to_semicolon();
@@ -260,6 +268,10 @@ impl<'src> Parser<'src> {
             }
 
             if self.get() != &Token::Ctrl(';') {
+                if optional_semi {
+                    continue;
+                }
+
                 diagnostics.push(self.create(Error::Expected(
                     Token::Ctrl(';').to_string(),
                     self.get().to_string(),
@@ -590,14 +602,62 @@ impl<'src> Parser<'src> {
         )
     }
 
+    fn block_items(&mut self) -> Result<(Vec<SpannedExpr>, bool), Spanned<Error>> {
+        if self.get() == &Token::Ctrl('}') {
+            self.back();
+            return Ok((vec![], false));
+        }
+
+        let mut out = vec![];
+        let mut trailing;
+
+        loop {
+            let item = self.expr()?;
+            let optional_semi = item.ends_in_block();
+            out.push(item);
+            trailing = false;
+
+            if !self.advance() {
+                break;
+            }
+
+            if self.get() == &Token::Ctrl(';') {
+                self.checkpoint();
+
+                if !self.advance() {
+                    self.remove_checkpoint();
+                    trailing = true;
+                    break;
+                }
+
+                if self.get() == &Token::Ctrl('}') {
+                    self.restore_checkpoint();
+                    trailing = true;
+                    break;
+                }
+
+                self.remove_checkpoint();
+                continue;
+            }
+
+            if self.get() == &Token::Ctrl('}') {
+                self.back();
+                break;
+            }
+
+            if optional_semi {
+                continue;
+            }
+
+            return Err(self.expected(Token::Ctrl(';').to_string(), self.get().to_string()));
+        }
+
+        Ok((out, trailing))
+    }
+
     fn block(&mut self) -> ExprResult {
-        let (mut res, trailing) = self.list(
-            &Token::Ctrl('{'),
-            &Token::Ctrl('}'),
-            &Token::Ctrl(';'),
-            Self::expr,
-            "expr",
-        )?;
+        let (mut res, trailing) =
+            self.wrapped(&Token::Ctrl('{'), &Token::Ctrl('}'), "expr", Self::block_items)?;
 
         if trailing {
             res.push(self.create(Box::new(Expr::Null)));
@@ -905,6 +965,11 @@ mod test {
     }
 
     #[test]
+    fn test_parse_empty_input_is_null() {
+        assert_parses_to("", Expr::Null);
+    }
+
+    #[test]
     fn test_parse_fn() {
         assert_parses_to(
             "fn(a, b) { a }",
@@ -1074,6 +1139,50 @@ mod test {
                     next: sp(Box::new(Expr::Null)),
                 })),
             },
+        );
+    }
+
+    #[test]
+    fn test_parse_optional_semicolon_after_if_in_sequence() {
+        assert_parses_to(
+            "if true { 1 } 2",
+            Expr::Then {
+                first: sp(Box::new(Expr::If {
+                    cond: sp(Box::new(Expr::Literal(Value::Bool(true)))),
+                    then: sp(Box::new(Expr::Block {
+                        body: sp(Box::new(Expr::Literal(Value::Int(1)))),
+                    })),
+                    else_: None,
+                })),
+                next: sp(Box::new(Expr::Literal(Value::Int(2)))),
+            },
+        );
+    }
+
+    #[test]
+    fn test_parse_optional_semicolon_after_for_in_block() {
+        assert_parses_to(
+            "{ for x in list { x } 2 }",
+            Expr::Block {
+                body: sp(Box::new(Expr::Then {
+                    first: sp(Box::new(Expr::For {
+                        name: Some(sp("x".to_string())),
+                        iterator: sp(Box::new(Expr::Local { name: sp("list".to_string()) })),
+                        body: sp(Box::new(Expr::Block {
+                            body: sp(Box::new(Expr::Local { name: sp("x".to_string()) })),
+                        })),
+                    })),
+                    next: sp(Box::new(Expr::Literal(Value::Int(2)))),
+                })),
+            },
+        );
+    }
+
+    #[test]
+    fn test_parse_explicit_semicolon_after_if_still_works() {
+        assert_eq!(
+            zero(parse("if true { 1 } 2")),
+            zero(parse("if true { 1 }; 2")),
         );
     }
 

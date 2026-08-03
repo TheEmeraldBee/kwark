@@ -725,7 +725,7 @@ impl<Cx> Engine<Cx> {
                         values.push(self.solve(arg, scope, cx)?);
                     }
 
-                    scope.push_frame();
+                    scope.push_blocking_frame();
                     for (param, value) in params.into_iter().zip(values) {
                         scope.register(param, value);
                     }
