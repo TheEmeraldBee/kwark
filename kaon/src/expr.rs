@@ -70,6 +70,9 @@ pub enum Expr {
 impl Expr {
     /// Reports whether a trailing `;` is optional after this expr in a statement sequence
     pub fn ends_in_block(&self) -> bool {
-        matches!(self, Expr::If { .. } | Expr::For { .. } | Expr::Block { .. })
+        matches!(
+            self,
+            Expr::If { .. } | Expr::For { .. } | Expr::Block { .. }
+        )
     }
 }

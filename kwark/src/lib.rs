@@ -86,7 +86,31 @@ impl Editor {
                         let cx = args.cx();
                         let input = cx.get::<&mut InputState>();
 
+                        if event.0.len() != 0 {
+                            return Err(lang::KaonError::External("expected 0 arguments to bind event".to_string()))
+                        }
+
                         input.tree(mode).register(&chord, "hello", lang::Value::Method { args: event.0, body: event.1 });
+
+                        Ok(lang::Value::Null)
+            }))
+            .register("backup",
+                FunctionBuilder::new()
+                    .desc("Sets the backup function for a given mode to a function that takes the chord")
+                    .arg("mode", "The mode that this binding applies to", Some(lang::Type::Str))
+                    .arg("backup", "The method to run on the backup (requires 1 argument)", Some(lang::Type::Method))
+                    .build(|args: &mut Args<'_, State>| {
+                        let mode = args.str("mode")?;
+                        let event = args.method("backup")?;
+
+                        let cx = args.cx();
+                        let input = cx.get::<&mut InputState>();
+
+                        if event.0.len() != 1 {
+                            return Err(lang::KaonError::External("expected 1 argument to backup method".to_string()))
+                        }
+
+                        input.tree(mode).set_backup(lang::Value::Method { args: event.0, body: event.1 });
 
                         Ok(lang::Value::Null)
             }));
@@ -131,13 +155,22 @@ impl Editor {
                     event::Event::FocusLost => {}
                     event::Event::Key(k) => {
                         match self.state.get::<&mut InputState>().step(Chord::from(k)) {
-                            Step::Complete(c) => {
+                            Step::Complete(c, chords) => {
                                 let method =
                                     c.method().expect("Value in input **should** be method");
 
-                                self.engine
-                                    .solve(&method.1, &mut self.scope, &mut self.state)
-                                    .expect("Should have worked");
+                                self.scope.push_blocking_frame();
+                                if let Some(param) = method.0.first() {
+                                    let chord = chords
+                                        .iter()
+                                        .map(Chord::to_string)
+                                        .collect::<Vec<_>>()
+                                        .join(" ");
+                                    self.scope.register(param.clone(), lang::Value::Str(chord));
+                                }
+                                let res = self.engine.solve(&method.1, &mut self.scope, &mut self.state);
+                                self.scope.pop_frame();
+                                res.expect("Should have worked");
                             }
                             _ => {}
                         };

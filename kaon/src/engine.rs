@@ -498,6 +498,29 @@ impl<Cx> Engine<Cx> {
                 .build(|args| Ok(Value::Bool(args.bool("a")? || args.bool("b")?))),
         );
 
+        engine.register(
+            "len",
+            FunctionBuilder::new()
+                .desc("The length of the passed in array or string")
+                .arg("val", "the value to get the length of", None)
+                .build(|args| {
+                    let value = args.value("val")?;
+                    let length = match value {
+                        Value::Null => 0,
+                        Value::Str(s) => s.len() as i32,
+                        Value::List(l) => l.len() as i32,
+                        _ => {
+                            return Err(Error::Expected(
+                                "null, str, or list".to_string(),
+                                value.type_of().to_string(),
+                            ));
+                        }
+                    };
+
+                    Ok(Value::Int(length))
+                }),
+        );
+
         engine
     }
 

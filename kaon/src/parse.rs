@@ -656,8 +656,12 @@ impl<'src> Parser<'src> {
     }
 
     fn block(&mut self) -> ExprResult {
-        let (mut res, trailing) =
-            self.wrapped(&Token::Ctrl('{'), &Token::Ctrl('}'), "expr", Self::block_items)?;
+        let (mut res, trailing) = self.wrapped(
+            &Token::Ctrl('{'),
+            &Token::Ctrl('}'),
+            "expr",
+            Self::block_items,
+        )?;
 
         if trailing {
             res.push(self.create(Box::new(Expr::Null)));
@@ -1167,9 +1171,13 @@ mod test {
                 body: sp(Box::new(Expr::Then {
                     first: sp(Box::new(Expr::For {
                         name: Some(sp("x".to_string())),
-                        iterator: sp(Box::new(Expr::Local { name: sp("list".to_string()) })),
+                        iterator: sp(Box::new(Expr::Local {
+                            name: sp("list".to_string()),
+                        })),
                         body: sp(Box::new(Expr::Block {
-                            body: sp(Box::new(Expr::Local { name: sp("x".to_string()) })),
+                            body: sp(Box::new(Expr::Local {
+                                name: sp("x".to_string()),
+                            })),
                         })),
                     })),
                     next: sp(Box::new(Expr::Literal(Value::Int(2)))),

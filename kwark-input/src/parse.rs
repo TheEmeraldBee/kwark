@@ -98,7 +98,10 @@ mod tests {
     fn parses_modifiers() {
         assert_eq!(
             parse_chord("ctrl-alt-d").unwrap(),
-            Chord::new(KeyCode::Char('d'), KeyModifiers::CONTROL | KeyModifiers::ALT)
+            Chord::new(
+                KeyCode::Char('d'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT
+            )
         );
     }
 
@@ -117,7 +120,10 @@ mod tests {
     fn parses_trailing_hyphen_as_key() {
         assert_eq!(
             parse_chord("ctrl-alt--").unwrap(),
-            Chord::new(KeyCode::Char('-'), KeyModifiers::CONTROL | KeyModifiers::ALT)
+            Chord::new(
+                KeyCode::Char('-'),
+                KeyModifiers::CONTROL | KeyModifiers::ALT
+            )
         );
     }
 

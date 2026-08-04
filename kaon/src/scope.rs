@@ -95,7 +95,11 @@ impl Scope {
             .iter()
             .rev()
             .find_map(|x| x.variables.get(&name))
-            .or_else(|| (boundary > 0).then(|| self.frames[0].variables.get(&name)).flatten())
+            .or_else(|| {
+                (boundary > 0)
+                    .then(|| self.frames[0].variables.get(&name))
+                    .flatten()
+            })
     }
 
     /// The name of every variable visible from the current frame

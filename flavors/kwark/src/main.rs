@@ -14,9 +14,7 @@ fn main() {
             input::bind("normal", ["ctrl-c"], fn() { quit() });
             input::bind("normal", [";", "Q"], fn() { quit() });
 
-            for ch in "abcdefghijklmnopqrstuvwxyz" {
-                input::bind("normal", [ch], fn() { quit() });
-            }
+            input::backup("normal", fn(key) { if len(key) == 1 { quit() } });
         "#,
         )
         .unwrap();

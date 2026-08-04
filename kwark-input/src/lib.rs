@@ -32,6 +32,44 @@ impl From<KeyEvent> for Chord {
     }
 }
 
+impl std::fmt::Display for Chord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (flag, name) in [
+            (KeyModifiers::CONTROL, "ctrl"),
+            (KeyModifiers::ALT, "alt"),
+            (KeyModifiers::SHIFT, "shift"),
+            (KeyModifiers::SUPER, "super"),
+            (KeyModifiers::META, "meta"),
+            (KeyModifiers::HYPER, "hyper"),
+        ] {
+            if self.mods.contains(flag) {
+                write!(f, "{name}-")?;
+            }
+        }
+
+        match self.code {
+            KeyCode::Char(' ') => write!(f, "space"),
+            KeyCode::Char(c) => write!(f, "{c}"),
+            KeyCode::Tab => write!(f, "tab"),
+            KeyCode::Enter => write!(f, "enter"),
+            KeyCode::Esc => write!(f, "esc"),
+            KeyCode::Backspace => write!(f, "backspace"),
+            KeyCode::Delete => write!(f, "delete"),
+            KeyCode::Insert => write!(f, "insert"),
+            KeyCode::Home => write!(f, "home"),
+            KeyCode::End => write!(f, "end"),
+            KeyCode::PageUp => write!(f, "pageup"),
+            KeyCode::PageDown => write!(f, "pagedown"),
+            KeyCode::Up => write!(f, "up"),
+            KeyCode::Down => write!(f, "down"),
+            KeyCode::Left => write!(f, "left"),
+            KeyCode::Right => write!(f, "right"),
+            KeyCode::F(n) => write!(f, "f{n}"),
+            other => write!(f, "{other:?}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum InputNode {
     Node {
@@ -103,12 +141,14 @@ fn get_or_insert<'a>(nodes: &'a mut Vec<InputNode>, chord: &Chord) -> &'a mut In
 pub enum Step {
     Failed,
     Step,
-    Complete(Value),
+    Complete(Value, Vec<Chord>),
 }
 
 pub struct InputTree {
     root: Vec<InputNode>,
     current: Vec<Chord>,
+
+    backup: Option<Value>,
 }
 
 impl Default for InputTree {
@@ -123,6 +163,8 @@ impl InputTree {
         Self {
             root: vec![],
             current: vec![],
+
+            backup: None,
         }
     }
 
@@ -148,10 +190,18 @@ impl InputTree {
             Some(InputNode::Node { .. }) => Step::Step,
             Some(InputNode::Leaf { event, .. }) => {
                 let event = event.clone();
-                self.current.clear();
-                Step::Complete(event)
+                let chords = std::mem::take(&mut self.current);
+                Step::Complete(event, chords)
             }
             None => {
+                // Only 1 chord input and a backup method exists
+                if self.current.len() == 1
+                    && let Some(backup) = &self.backup
+                {
+                    let chords = std::mem::take(&mut self.current);
+                    return Step::Complete(backup.clone(), chords);
+                }
+
                 self.current.clear();
                 Step::Failed
             }
@@ -180,6 +230,10 @@ impl InputTree {
         }
 
         elem
+    }
+
+    pub fn set_backup(&mut self, backup: Value) {
+        self.backup = Some(backup)
     }
 
     pub fn register(&mut self, chords: &[Chord], desc: impl Into<String>, event: Value) {
