@@ -1,10 +1,9 @@
 use std::{io::stdout, time::Duration};
 
 use crossterm::event;
-use kaon::engine::{Args, FunctionBuilder};
 use kwark_buffer::BufferList;
 use kwark_input::{Chord, InputState, Step, parse_chord};
-use ratatui::{text::Line, widgets::Paragraph};
+use ratatui::{prelude::*, widgets::Paragraph};
 
 mod state;
 
@@ -28,92 +27,117 @@ pub fn init() -> Editor {
     editor
 }
 
+#[kaon::module]
+mod commands {
+    type Cx = State;
+
+    /// Quits the editor
+    fn quit(cx: Cx) {
+        cx.get::<&mut Running>().quit();
+        Ok(lang::Value::Null)
+    }
+
+    mod buffer {
+        fn open(cx: Cx, path: lang::Str) {
+            let list = cx.get::<&mut BufferList>();
+            let id = list
+                .file(path.into())
+                .map_err(|e| kaon::error::Error::External(e.to_string()))?;
+
+            Ok(lang::Value::Int(id as i32))
+        }
+
+        /// Inserts text at the given line col of buffer 0
+        fn insert(cx: Cx, line: lang::Int, col: lang::Int, text: lang::Str) {
+            let list = cx
+                .get::<&mut BufferList>()
+                .get(0)
+                .expect("Buffer 0 should exist");
+
+            list.insert(line as usize, col as usize, text)
+                .map_err(|e| lang::KaonError::External(e.to_string()))?;
+
+            Ok(lang::Value::Null)
+        }
+    }
+
+    mod input {
+        /// Registers a bind for the given mode and key-sequence, and runs the given method on success
+        fn bind(cx: Cx, mode: lang::Str, chord: lang::List, event: lang::Method) {
+            let chord = chord
+                .iter()
+                .map(|v| v.str().map(str::to_string))
+                .collect::<Result<Vec<String>, _>>()?;
+            let chord = chord
+                .iter()
+                .map(|s| parse_chord(s))
+                .collect::<Result<Vec<Chord>, _>>()
+                .map_err(|e| kaon::error::Error::External(e.to_string()))?;
+
+            let input = cx.get::<&mut InputState>();
+
+            if !event.0.is_empty() {
+                return Err(lang::KaonError::External(
+                    "expected 0 arguments to bind event".to_string(),
+                ));
+            }
+
+            input.tree(mode).register(
+                &chord,
+                "hello",
+                lang::Value::Method {
+                    args: event.0,
+                    body: event.1,
+                },
+            );
+
+            Ok(lang::Value::Null)
+        }
+
+        /// Switches the active input mode
+        fn set_mode(cx: Cx, mode: lang::Str) {
+            let input = cx.get::<&mut InputState>();
+            let old_mode = input.mode().to_string();
+            input.set_mode(mode);
+
+            Ok(lang::Value::Str(old_mode))
+        }
+
+        /// Gets the active input mode
+        fn get_mode(cx: Cx) {
+            let input = cx.get::<&mut InputState>();
+            let mode = input.mode().to_string();
+
+            Ok(lang::Value::Str(mode))
+        }
+
+        /// Sets the backup function for a given mode to a function that takes the chord
+        fn backup(cx: Cx, mode: lang::Str, backup: lang::Method) {
+            let input = cx.get::<&mut InputState>();
+
+            if backup.0.len() != 1 {
+                return Err(lang::KaonError::External(
+                    "expected 1 argument to backup method".to_string(),
+                ));
+            }
+
+            input.tree(mode).set_backup(lang::Value::Method {
+                args: backup.0,
+                body: backup.1,
+            });
+
+            Ok(lang::Value::Null)
+        }
+    }
+}
+
 impl Editor {
     pub fn init(&mut self) {
         self.state.insert(BufferList::default());
         self.state.insert(InputState::new("normal"));
         self.state.insert(Running(true));
 
-        self.engine.register(
-            "quit",
-            FunctionBuilder::new()
-                .desc("Quits the editor")
-                .build(|args: &mut Args<'_, State>| {
-                    args.cx().get::<&mut Running>().quit();
-                    Ok(lang::Value::Null)
-                }),
-        );
-
-        self.engine.namespace("buffer").register(
-            "open",
-            FunctionBuilder::new()
-                .arg(
-                    "path",
-                    "the path to the file you want to open",
-                    Some(lang::Type::Str),
-                )
-                .build(|args: &mut Args<'_, State>| {
-                    let path = args.str("path")?;
-
-                    let list = args.cx().get::<&mut BufferList>();
-                    let id = list
-                        .file(path.into())
-                        .map_err(|e| kaon::error::Error::External(e.to_string()))?;
-
-                    Ok(lang::Value::Int(id as i32))
-                }),
-        );
-
-        self.engine.namespace("input")
-            .register(
-                "bind",
-                FunctionBuilder::new()
-                    .desc("Registers a bind for the given mode and key-sequence, and runs the given method on success")
-                    .arg("mode", "The mode that this binding applies to", Some(lang::Type::Str))
-                    .arg("chord", "The key presses that make up the keybind (list of strings)", Some(lang::Type::List))
-                    .arg("event", "The function to run on execution (takes 0 arguments)", Some(lang::Type::Method))
-                    .build(|args: &mut Args<'_, State>| {
-                        let mode = args.str("mode")?;
-                        let chord = args.mapped_list("chord", |v| v.str().map(str::to_string))?;
-                        let event = args.method("event")?;
-
-                        let chord = chord
-                            .iter()
-                            .map(|s| parse_chord(s))
-                            .collect::<Result<Vec<Chord>, _>>()
-                            .map_err(|e| kaon::error::Error::External(e.to_string()))?;
-
-                        let cx = args.cx();
-                        let input = cx.get::<&mut InputState>();
-
-                        if event.0.len() != 0 {
-                            return Err(lang::KaonError::External("expected 0 arguments to bind event".to_string()))
-                        }
-
-                        input.tree(mode).register(&chord, "hello", lang::Value::Method { args: event.0, body: event.1 });
-
-                        Ok(lang::Value::Null)
-            }))
-            .register("backup",
-                FunctionBuilder::new()
-                    .desc("Sets the backup function for a given mode to a function that takes the chord")
-                    .arg("mode", "The mode that this binding applies to", Some(lang::Type::Str))
-                    .arg("backup", "The method to run on the backup (requires 1 argument)", Some(lang::Type::Method))
-                    .build(|args: &mut Args<'_, State>| {
-                        let mode = args.str("mode")?;
-                        let event = args.method("backup")?;
-
-                        let cx = args.cx();
-                        let input = cx.get::<&mut InputState>();
-
-                        if event.0.len() != 1 {
-                            return Err(lang::KaonError::External("expected 1 argument to backup method".to_string()))
-                        }
-
-                        input.tree(mode).set_backup(lang::Value::Method { args: event.0, body: event.1 });
-
-                        Ok(lang::Value::Null)
-            }));
+        register(&mut self.engine);
     }
 
     pub fn run(mut self) {
@@ -168,7 +192,9 @@ impl Editor {
                                         .join(" ");
                                     self.scope.register(param.clone(), lang::Value::Str(chord));
                                 }
-                                let res = self.engine.solve(&method.1, &mut self.scope, &mut self.state);
+                                let res =
+                                    self.engine
+                                        .solve(&method.1, &mut self.scope, &mut self.state);
                                 self.scope.pop_frame();
                                 res.expect("Should have worked");
                             }

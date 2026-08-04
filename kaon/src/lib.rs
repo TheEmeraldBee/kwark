@@ -15,6 +15,8 @@ pub mod spanned;
 pub mod engine;
 pub mod scope;
 
+pub use kaon_macros::module;
+
 pub mod prelude {
     pub use crate::error::Error as KaonError;
 
@@ -29,4 +31,6 @@ pub mod prelude {
     pub use crate::scope::Scope;
 
     pub use crate::spanned::Spanned;
+
+    pub use kaon_macros::module;
 }

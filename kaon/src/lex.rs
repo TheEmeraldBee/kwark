@@ -91,6 +91,10 @@ impl<'src> Lexer<'src> {
         self.chars[self.cursor]
     }
 
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.cursor + 1).copied()
+    }
+
     fn create<T>(&self, value: T) -> Spanned<T> {
         Spanned::new(self.cursor, self.cursor, value)
     }
@@ -200,6 +204,34 @@ impl<'src> Lexer<'src> {
                     }
 
                     res.push(self.create_checkpoint(Token::Str(str)));
+                }
+
+                // Line comment
+                '/' if self.peek() == Some('/') => {
+                    self.advance();
+
+                    while self.advance() {
+                        if self.get() == '\n' {
+                            break;
+                        }
+                    }
+                }
+
+                // Block comment
+                '/' if self.peek() == Some('*') => {
+                    self.checkpoint();
+                    self.advance();
+
+                    loop {
+                        if !self.advance() {
+                            return Err(self.create_checkpoint(Error::UnclosedComment));
+                        }
+
+                        if self.get() == '*' && self.peek() == Some('/') {
+                            self.advance();
+                            break;
+                        }
+                    }
                 }
 
                 // Ops
@@ -372,6 +404,42 @@ mod test {
             Spanned::new(17, 42, Token::Str("abacadaba -> \" \" \n\t ".to_string()))
         );
     }
+    #[test]
+    fn test_lex_line_comment_is_skipped() {
+        let tokens = Lexer::lex("1 // this is a comment\n2", &registry()).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Spanned::new(0, 0, Token::Int(1)),
+                Spanned::new(23, 23, Token::Int(2)),
+            ]
+        )
+    }
+
+    #[test]
+    fn test_lex_line_comment_at_eof_is_skipped() {
+        let tokens = Lexer::lex("1 // trailing comment", &registry()).unwrap();
+        assert_eq!(tokens, vec![Spanned::new(0, 0, Token::Int(1))])
+    }
+
+    #[test]
+    fn test_lex_block_comment_is_skipped() {
+        let tokens = Lexer::lex("1 /* a\nmulti\nline comment */ 2", &registry()).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Spanned::new(0, 0, Token::Int(1)),
+                Spanned::new(29, 29, Token::Int(2)),
+            ]
+        )
+    }
+
+    #[test]
+    fn test_lex_unclosed_block_comment_errors() {
+        let err = Lexer::lex("1 /* never closed", &registry()).unwrap_err();
+        assert_eq!(err, Spanned::new(2, 16, Error::UnclosedComment));
+    }
+
     #[test]
     fn test_lex_str_span_error() {
         let err = Lexer::lex(

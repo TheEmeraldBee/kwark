@@ -6,6 +6,9 @@ pub enum Error {
     #[error("Expected '\"' to close the string, but found EOF")]
     UnclosedString,
 
+    #[error("Expected '*/' to close the comment, but found EOF")]
+    UnclosedComment,
+
     #[error("Unknown char: '{0}'")]
     UnknownChar(char),
 

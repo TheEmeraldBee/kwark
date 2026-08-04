@@ -8,6 +8,14 @@ use crate::{
 
 pub type ValueIter = Rc<RefCell<dyn Iterator<Item = Value>>>;
 
+/// Argument types recognized by `#[kaon::module]`
+pub type Str = String;
+pub type Int = i32;
+pub type Float = f32;
+pub type Bool = bool;
+pub type List = Vec<Value>;
+pub type Method = (Vec<String>, SpannedExpr);
+
 /// The kind of a [`Value`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {

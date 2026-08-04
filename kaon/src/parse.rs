@@ -171,30 +171,19 @@ impl<'src> Parser<'src> {
                     break;
                 }
 
-                parser.checkpoint();
-
                 if !parser.advance() {
-                    parser.remove_checkpoint();
                     trailing = true;
                     break;
                 }
 
-                match func(parser) {
-                    Ok(item) => {
-                        parser.remove_checkpoint();
-                        out.push(item);
-                        trailing = false;
-                    }
-                    Err(err) => {
-                        if allow_trailing {
-                            parser.restore_checkpoint();
-                            trailing = true;
-                            break;
-                        }
-
-                        return Err(err);
-                    }
+                if allow_trailing && parser.get() == end {
+                    parser.back();
+                    trailing = true;
+                    break;
                 }
+
+                out.push(func(parser)?);
+                trailing = false;
             }
 
             Ok((out, trailing))

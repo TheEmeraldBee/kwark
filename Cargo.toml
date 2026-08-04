@@ -1,5 +1,5 @@
 [workspace]
-members = ["flavors/*","kaon", "kaon-autocomplete", "kwark", "kwark-buffer", "kwark-input"]
+members = ["flavors/*","kaon", "kaon-autocomplete", "kaon-macros", "kwark", "kwark-buffer", "kwark-input"]
 resolver = "3"
 
 [workspace.package]
