@@ -5,8 +5,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-kaon.workspace = true
-
 kwark-buffer.workspace = true
 kwark-input.workspace = true
 

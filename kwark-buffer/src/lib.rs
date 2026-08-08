@@ -72,7 +72,8 @@ impl BufferList {
     /// Create a new buffer by loading the file into memory
     ///
     /// If the file is already in memory, fetches it for you.
-    pub fn file(&mut self, path: PathBuf) -> Result<BufferID> {
+    pub fn file(&mut self, path: impl Into<PathBuf>) -> Result<BufferID> {
+        let path = path.into();
         let kind = BufferKind::File(path.clone());
 
         if let Some(id) = self.by_kind.get(&kind) {

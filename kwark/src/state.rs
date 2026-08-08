@@ -2,18 +2,15 @@ use std::{
     any::{Any, TypeId},
     collections::HashMap,
     fmt,
+    ops::{Deref, DerefMut},
     sync::mpsc::{self, Receiver, Sender},
 };
-
-use kaon::prelude as kaon;
 
 use crate::events::EventStorage;
 
 pub type CallbackFn = Box<dyn FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static>;
 
 pub struct Editor {
-    pub engine: kaon::Engine<State>,
-    pub scope: kaon::Scope,
     pub state: State,
 
     pub events: EventStorage,
@@ -23,12 +20,23 @@ pub struct Editor {
     callback_rx: Receiver<CallbackFn>,
 }
 
+impl Deref for Editor {
+    type Target = State;
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl DerefMut for Editor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
+}
+
 impl Default for Editor {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
-            engine: kaon::Engine::<State>::default_std(),
-            scope: kaon::Scope::default(),
             state: State::new(tx),
 
             events: EventStorage::default(),
@@ -52,10 +60,6 @@ impl Editor {
         }
 
         Ok(())
-    }
-
-    pub fn exec(&mut self, text: &str) -> Result<kaon::Value, kaon::Spanned<kaon::KaonError>> {
-        self.engine.exec(text, &mut self.scope, &mut self.state)
     }
 }
 

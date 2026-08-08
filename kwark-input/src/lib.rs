@@ -1,7 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use kaon::value::Value;
 
 mod parse;
 
@@ -70,8 +69,11 @@ impl std::fmt::Display for Chord {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum InputNode {
+type Event<S> = Rc<dyn Fn(&mut S) -> anyhow::Result<()> + 'static>;
+type EventBackup<S> = Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<()> + 'static>;
+
+#[derive(Clone)]
+pub enum InputNode<S: 'static> {
     Node {
         desc: String,
         key: Chord,
@@ -80,11 +82,11 @@ pub enum InputNode {
     Leaf {
         desc: String,
         key: Chord,
-        event: Value,
+        event: Event<S>,
     },
 }
 
-impl InputNode {
+impl<S: 'static> InputNode<S> {
     pub fn is_chord(&self, chord: &Chord) -> bool {
         match self {
             Self::Node { key, .. } => key == chord,
@@ -125,7 +127,10 @@ impl InputNode {
     }
 }
 
-fn get_or_insert<'a>(nodes: &'a mut Vec<InputNode>, chord: &Chord) -> &'a mut InputNode {
+fn get_or_insert<'a, S: 'static>(
+    nodes: &'a mut Vec<InputNode<S>>,
+    chord: &Chord,
+) -> &'a mut InputNode<S> {
     if let Some(idx) = nodes.iter().position(|x| x.is_chord(chord)) {
         return &mut nodes[idx];
     }
@@ -138,26 +143,26 @@ fn get_or_insert<'a>(nodes: &'a mut Vec<InputNode>, chord: &Chord) -> &'a mut In
 }
 
 /// Result of feeding one chord into `InputTree::step`
-pub enum Step {
+pub enum Step<S: 'static> {
     Failed,
     Step,
-    Complete(Value, Vec<Chord>),
+    Complete(Event<S>, Vec<Chord>),
 }
 
-pub struct InputTree {
-    root: Vec<InputNode>,
+pub struct InputTree<S: 'static> {
+    root: Vec<InputNode<S>>,
     current: Vec<Chord>,
 
-    backup: Option<Value>,
+    backup: Option<EventBackup<S>>,
 }
 
-impl Default for InputTree {
+impl<S: 'static> Default for InputTree<S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl InputTree {
+impl<S: 'static> InputTree<S> {
     /// Create a new empty tree
     pub fn new() -> Self {
         Self {
@@ -169,7 +174,7 @@ impl InputTree {
     }
 
     /// Retrieves the node found when using the chords
-    fn find(&self, chords: &[Chord]) -> Option<&InputNode> {
+    fn find(&self, chords: &[Chord]) -> Option<&InputNode<S>> {
         let mut chords = chords.iter();
         let chord = chords.next()?;
 
@@ -183,7 +188,7 @@ impl InputTree {
     }
 
     /// Feed a single chord into the tree, advancing from wherever the last `step` left off
-    pub fn step(&mut self, chord: Chord) -> Step {
+    pub fn step(&mut self, chord: Chord) -> Step<S> {
         self.current.push(chord);
 
         match self.find(&self.current) {
@@ -199,7 +204,10 @@ impl InputTree {
                     && let Some(backup) = &self.backup
                 {
                     let chords = std::mem::take(&mut self.current);
-                    return Step::Complete(backup.clone(), chords);
+                    let last = chords.last().expect("Length checked to be 1").clone();
+                    let backup = backup.clone();
+
+                    return Step::Complete(Rc::new(move |state| backup(state, last)), chords);
                 }
 
                 self.current.clear();
@@ -213,7 +221,7 @@ impl InputTree {
         self.current.clear();
     }
 
-    pub fn find_or_create(&mut self, chords: &[Chord]) -> &mut InputNode {
+    pub fn find_or_create(&mut self, chords: &[Chord]) -> &mut InputNode<S> {
         let mut chords = chords.iter();
         let chord = chords
             .next()
@@ -232,11 +240,30 @@ impl InputTree {
         elem
     }
 
-    pub fn set_backup(&mut self, backup: Value) {
-        self.backup = Some(backup)
+    pub fn set_backup(
+        &mut self,
+        backup: Option<Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<()> + 'static>>,
+    ) {
+        self.backup = backup
     }
 
-    pub fn register(&mut self, chords: &[Chord], desc: impl Into<String>, event: Value) {
+    pub fn bind(
+        &mut self,
+        keys: &[impl AsRef<str>],
+        desc: impl Into<String>,
+        event: Event<S>,
+    ) -> anyhow::Result<()> {
+        let chords = keys
+            .iter()
+            .map(|x| parse_chord(x.as_ref()))
+            .collect::<Result<Vec<Chord>, ParseError>>()?;
+
+        self.register(&chords, desc, event);
+
+        Ok(())
+    }
+
+    pub fn register(&mut self, chords: &[Chord], desc: impl Into<String>, event: Event<S>) {
         if chords.is_empty() {
             return;
         }
@@ -273,12 +300,12 @@ impl InputTree {
 }
 
 /// A set of user-defined modes, each with its own `InputTree`, with stepping routed to whichever mode is current
-pub struct InputState {
-    trees: HashMap<String, InputTree>,
+pub struct InputState<S: 'static> {
+    trees: HashMap<String, InputTree<S>>,
     mode: String,
 }
 
-impl InputState {
+impl<S: 'static> InputState<S> {
     /// Create a new state starting in the given mode
     pub fn new(mode: impl Into<String>) -> Self {
         let mode = mode.into();
@@ -302,12 +329,12 @@ impl InputState {
     }
 
     /// Get or create the `InputTree` for a mode, e.g. for `register`/`describe`
-    pub fn tree(&mut self, mode: impl Into<String>) -> &mut InputTree {
+    pub fn tree(&mut self, mode: impl Into<String>) -> &mut InputTree<S> {
         self.trees.entry(mode.into()).or_default()
     }
 
     /// Feed a single chord into the current mode's tree
-    pub fn step(&mut self, chord: Chord) -> Step {
+    pub fn step(&mut self, chord: Chord) -> Step<S> {
         self.trees.entry(self.mode.clone()).or_default().step(chord)
     }
 }
