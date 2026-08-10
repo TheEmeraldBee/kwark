@@ -10,6 +10,7 @@ pub mod prelude {
     pub use crate::InputState;
     pub use crate::Running;
     pub use crate::State;
+    pub use crossterm::event::{KeyCode, KeyModifiers};
     pub use kwark_buffer::BufferList;
     pub use kwark_input::{Chord, Step};
 }
@@ -108,8 +109,8 @@ impl Editor {
 
                 let lines = bufs
                     .get(0)
-                    .unwrap()
-                    .viewport((0, 0), (100, 100))
+                    .map(|buf| buf.viewport((0, 0), (100, 100)))
+                    .unwrap_or_default()
                     .into_iter()
                     .map(|x| Line::raw(x.text))
                     .collect::<Vec<_>>();
