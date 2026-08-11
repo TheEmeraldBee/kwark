@@ -32,10 +32,30 @@ impl<T> EventHandler<T> {
     }
 }
 
+/// A type-erased handle onto an `EventHandler<T>`, dispatchable by runtime `TypeId`
+trait ErasedEventHandler {
+    fn handle_dyn(&self, state: &mut State, event: &mut dyn Any) -> anyhow::Result<()>;
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+impl<T: 'static> ErasedEventHandler for EventHandler<T> {
+    fn handle_dyn(&self, state: &mut State, event: &mut dyn Any) -> anyhow::Result<()> {
+        let event = event
+            .downcast_mut::<T>()
+            .expect("event was stored under its own TypeId");
+        self.handle(state, event)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 /// A general purpose event subscription and execution system
 #[derive(Default)]
 pub struct EventStorage {
-    events: HashMap<TypeId, Box<dyn Any>>,
+    events: HashMap<TypeId, Box<dyn ErasedEventHandler>>,
 }
 
 impl EventStorage {
@@ -46,7 +66,8 @@ impl EventStorage {
     ) {
         self.events
             .entry(TypeId::of::<T>())
-            .or_insert(Box::new(EventHandler::<T>::default()))
+            .or_insert_with(|| Box::new(EventHandler::<T>::default()))
+            .as_any_mut()
             .downcast_mut::<EventHandler<T>>()
             .expect("Type was stored under type ID and should be downcastable")
             .subscribers
@@ -57,9 +78,24 @@ impl EventStorage {
     pub fn handle<T: 'static>(&mut self, state: &mut State, event: &mut T) -> anyhow::Result<()> {
         self.events
             .entry(TypeId::of::<T>())
-            .or_insert(Box::new(EventHandler::<T>::default()))
+            .or_insert_with(|| Box::new(EventHandler::<T>::default()))
+            .as_any_mut()
             .downcast_mut::<EventHandler<T>>()
             .expect("Type was stored under type ID and should be downcastable")
             .handle(state, event)
+    }
+
+    /// Handles a single event whose concrete type is only known at runtime
+    pub fn handle_any(
+        &mut self,
+        state: &mut State,
+        type_id: TypeId,
+        mut event: Box<dyn Any>,
+    ) -> anyhow::Result<()> {
+        let Some(handler) = self.events.get(&type_id) else {
+            return Ok(());
+        };
+
+        handler.handle_dyn(state, event.as_mut())
     }
 }

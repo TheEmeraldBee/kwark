@@ -10,6 +10,11 @@ use crate::events::EventStorage;
 
 pub type CallbackFn = Box<dyn FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static>;
 
+pub enum Callback {
+    Event(TypeId, Box<dyn Any>),
+    Func(CallbackFn),
+}
+
 pub struct Editor {
     pub state: State,
 
@@ -17,7 +22,7 @@ pub struct Editor {
 
     pub running: bool,
 
-    callback_rx: Receiver<CallbackFn>,
+    callback_rx: Receiver<Callback>,
 }
 
 impl Deref for Editor {
@@ -56,29 +61,43 @@ impl Editor {
                 break;
             };
 
-            val(self)?;
+            match val {
+                Callback::Func(func) => func(self)?,
+                Callback::Event(type_, data) => {
+                    self.events.handle_any(&mut self.state, type_, data)?
+                }
+            }
         }
 
         Ok(())
     }
 }
 
-/// A type used to send CallbackFns through mpsc
-pub struct CallbackSender(Sender<CallbackFn>);
+/// A type used to send Callbacks through mpsc
+pub struct CallbackSender(Sender<Callback>);
 
 impl CallbackSender {
-    pub fn send(&mut self, func: impl FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static) {
-        let _ = self.0.send(Box::new(func));
+    pub fn send_fn(
+        &mut self,
+        func: impl FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static,
+    ) {
+        let _ = self.0.send(Callback::Func(Box::new(func)));
+    }
+
+    pub fn send_event<T: Any + 'static>(&mut self, data: T) {
+        let _ = self
+            .0
+            .send(Callback::Event(TypeId::of::<T>(), Box::new(data)));
     }
 }
 
 pub struct State {
-    callback_tx: Sender<CallbackFn>,
+    callback_tx: Sender<Callback>,
     inner: HashMap<TypeId, Box<dyn Any>>,
 }
 
 impl State {
-    pub fn new(callback_tx: Sender<CallbackFn>) -> Self {
+    pub fn new(callback_tx: Sender<Callback>) -> Self {
         Self {
             callback_tx,
             inner: HashMap::default(),
