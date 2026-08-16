@@ -6,6 +6,8 @@ fn main() -> anyhow::Result<()> {
     // Initialize the editor
     let mut editor = kwark::init();
 
+    editor.insert(CursorSet::new());
+
     // Retrieve the input state from the editor
     let input = editor.get::<&mut InputState>();
 
@@ -71,16 +73,20 @@ fn main() -> anyhow::Result<()> {
             &["space"],
             "Insert Space",
             Rc::new(|s| {
-                let bufs = s.get::<&mut BufferList>();
-                bufs.get(0).unwrap().insert(0, 0, " ")?;
+                let (bufs, cursor) = s.get::<(&mut BufferList, &mut CursorSet)>();
+                let buf = bufs.get(0).unwrap();
+                let mut bound = cursor.bind(buf);
+
+                bound.insert(" ", &CursorOptions::default());
 
                 Ok(())
             }),
         )?;
 
         insert.set_backup(Some(Rc::new(|s, chord| {
-            let bufs = s.get::<&mut BufferList>();
+            let (bufs, cursor) = s.get::<(&mut BufferList, &mut CursorSet)>();
             let buf = bufs.get(0).unwrap();
+            let mut bound = cursor.bind(buf);
 
             // Don't handle anything other than shift
             if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
@@ -95,7 +101,7 @@ fn main() -> anyhow::Result<()> {
                 _ => return Ok(()),
             };
 
-            buf.insert(0, 0, key_string)?;
+            bound.insert(key_string.as_str(), &CursorOptions::default());
 
             Ok(())
         })));

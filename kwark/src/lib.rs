@@ -11,7 +11,7 @@ pub mod prelude {
     pub use crate::Running;
     pub use crate::State;
     pub use crossterm::event::{KeyCode, KeyModifiers};
-    pub use kwark_buffer::BufferList;
+    pub use kwark_buffer::*;
     pub use kwark_input::{Chord, Step};
 }
 

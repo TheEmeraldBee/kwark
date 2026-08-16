@@ -161,6 +161,41 @@ impl Buffer {
 
         lines
     }
+
+    /// Clamp a character position into the length of the buffer
+    pub fn clamp(&self, mut chr: usize) -> usize {
+        if chr >= self.rope.len_chars() {
+            chr = self.rope.len_chars() - 1;
+        }
+
+        chr
+    }
+
+    pub fn char_to_line_col(&self, mut chr: usize) -> (usize, usize) {
+        chr = self.clamp(chr);
+
+        let line = self.rope.char_to_line(chr);
+        let start_pos = self.rope.line_to_char(line);
+
+        (line, chr - start_pos)
+    }
+
+    /// Converts a line, column pair into a resulting character index
+    ///
+    /// Clamps line and col to be valid within the text
+    pub fn line_col_to_char(&self, mut line: usize, mut col: usize) -> usize {
+        if line >= self.rope.len_lines() {
+            line = self.rope.len_lines() - 1;
+        }
+
+        let line_char = self.rope.line_to_char(line);
+
+        if col >= self.rope.line(line).len_chars() {
+            col = self.rope.line(line).len_chars() - 1;
+        }
+
+        line_char + col
+    }
 }
 
 pub struct Span {

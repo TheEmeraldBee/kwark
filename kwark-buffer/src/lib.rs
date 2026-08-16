@@ -10,6 +10,9 @@ mod operation;
 use normpath::PathExt;
 pub(crate) use operation::*;
 
+mod cursor;
+pub use cursor::*;
+
 pub struct BufferEntry {
     pub buffer: Buffer,
     kind: BufferKind,
