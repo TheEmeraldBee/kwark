@@ -128,7 +128,7 @@ impl Editor {
                         .map(|(chord, desc)| {
                             Line::raw(format!(
                                 "{} : {desc}",
-                                chord.map(|x| x.to_string()).unwrap_or("**".to_string())
+                                chord.map(|x| x.to_string()).unwrap_or("any".to_string())
                             ))
                         })
                         .collect::<Vec<_>>();

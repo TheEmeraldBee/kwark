@@ -391,10 +391,6 @@ impl<S: 'static> InputState<S> {
             return out;
         };
 
-        if let Some(backup_desc) = tree.backup_desc.clone() {
-            out.push((None, backup_desc))
-        }
-
         let found = match tree.find(&tree.current) {
             Some(node) => match node.children() {
                 Some(nodes) => nodes,
@@ -406,6 +402,10 @@ impl<S: 'static> InputState<S> {
         // Add all children to the layer
         for child in found {
             out.push((Some(child.key()), child.desc().to_string()));
+        }
+
+        if let Some(backup_desc) = tree.backup_desc.clone() {
+            out.push((None, backup_desc))
         }
 
         out
