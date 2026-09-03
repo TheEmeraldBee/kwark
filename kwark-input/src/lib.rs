@@ -115,6 +115,20 @@ impl<S: 'static> InputNode<S> {
         }
     }
 
+    pub fn desc(&self) -> &str {
+        match self {
+            Self::Node { desc, .. } => &desc,
+            Self::Leaf { desc, .. } => &desc,
+        }
+    }
+
+    pub fn key(&self) -> Chord {
+        match self {
+            Self::Node { key, .. } => *key,
+            Self::Leaf { key, .. } => *key,
+        }
+    }
+
     /// Replace a leaf with an empty node carrying the same desc and key, no-op on a node
     fn ensure_node(&mut self) {
         if let Self::Leaf { desc, key, .. } = self {
@@ -154,6 +168,7 @@ pub struct InputTree<S: 'static> {
     current: Vec<Chord>,
 
     backup: Option<EventBackup<S>>,
+    backup_desc: Option<String>,
 }
 
 impl<S: 'static> Default for InputTree<S> {
@@ -170,6 +185,7 @@ impl<S: 'static> InputTree<S> {
             current: vec![],
 
             backup: None,
+            backup_desc: None,
         }
     }
 
@@ -242,9 +258,16 @@ impl<S: 'static> InputTree<S> {
 
     pub fn set_backup(
         &mut self,
-        backup: Option<Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<()> + 'static>>,
+        backup: Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<()> + 'static>,
+        desc: impl Into<String>,
     ) {
-        self.backup = backup
+        self.backup = Some(backup);
+        self.backup_desc = Some(desc.into());
+    }
+
+    pub fn clear_backup(&mut self) {
+        self.backup = None;
+        self.backup_desc = None;
     }
 
     pub fn bind(
@@ -293,6 +316,21 @@ impl<S: 'static> InputTree<S> {
         }
     }
 
+    pub fn desc(
+        &mut self,
+        keys: &[impl AsRef<str>],
+        desc: impl Into<String>,
+    ) -> Result<(), ParseError> {
+        let chords = keys
+            .iter()
+            .map(|x| parse_chord(x.as_ref()))
+            .collect::<Result<Vec<_>, ParseError>>()?;
+
+        self.describe(&chords, desc);
+
+        Ok(())
+    }
+
     pub fn describe(&mut self, chords: &[Chord], desc: impl Into<String>) {
         let node = self.find_or_create(chords);
         node.set_desc(desc);
@@ -336,5 +374,40 @@ impl<S: 'static> InputState<S> {
     /// Feed a single chord into the current mode's tree
     pub fn step(&mut self, chord: Chord) -> Step<S> {
         self.trees.entry(self.mode.clone()).or_default().step(chord)
+    }
+
+    /// Returns if a chord is currently in progress
+    pub fn is_active(&self) -> bool {
+        self.trees
+            .get(&self.mode)
+            .map(|x| x.current.len() > 0)
+            .unwrap_or(false)
+    }
+
+    /// Returns a list of items at the current layer of the input node
+    pub fn get_layer(&self) -> Vec<(Option<Chord>, String)> {
+        let mut out = vec![];
+        let Some(tree) = self.trees.get(&self.mode) else {
+            return out;
+        };
+
+        if let Some(backup_desc) = tree.backup_desc.clone() {
+            out.push((None, backup_desc))
+        }
+
+        let found = match tree.find(&tree.current) {
+            Some(node) => match node.children() {
+                Some(nodes) => nodes,
+                None => return out,
+            },
+            None => &tree.root,
+        };
+
+        // Add all children to the layer
+        for child in found {
+            out.push((Some(child.key()), child.desc().to_string()));
+        }
+
+        out
     }
 }

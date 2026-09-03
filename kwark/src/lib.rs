@@ -4,7 +4,11 @@ use crossterm::event;
 use kwark_buffer::BufferList;
 pub use kwark_input::{Chord, Step};
 pub type InputState = kwark_input::InputState<State>;
-use ratatui::{prelude::*, widgets::Paragraph};
+use ratatui::{
+    macros::{horizontal, vertical},
+    prelude::*,
+    widgets::{Block, Borders, Paragraph},
+};
 
 pub mod prelude {
     pub use crate::InputState;
@@ -47,9 +51,8 @@ impl Editor {
         crossterm::execute!(
             stdout(),
             event::PushKeyboardEnhancementFlags(
-                event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-                    | event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES // | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
+                                                                           // | event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
             ),
             event::EnableBracketedPaste
         )
@@ -116,6 +119,28 @@ impl Editor {
                     .collect::<Vec<_>>();
 
                 frame.render_widget(Paragraph::new(lines), frame.area());
+
+                let state = self.state.get::<&InputState>();
+                if state.is_active() || true {
+                    let lines = state
+                        .get_layer()
+                        .iter()
+                        .map(|(chord, desc)| {
+                            Line::raw(format!(
+                                "{} : {desc}",
+                                chord.map(|x| x.to_string()).unwrap_or("**".to_string())
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+
+                    let vertical_layer = vertical![==80%, ==20%].split(frame.area())[1];
+                    let rect = horizontal![==60%, ==40%].split(vertical_layer)[1];
+
+                    frame.render_widget(
+                        Paragraph::new(lines).block(Block::new().borders(Borders::ALL)),
+                        rect,
+                    );
+                }
             })?;
         }
 

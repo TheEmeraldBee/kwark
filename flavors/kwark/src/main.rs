@@ -15,6 +15,8 @@ fn main() -> anyhow::Result<()> {
     {
         let normal = input.tree("normal");
 
+        normal.desc(&[";"], "Shortcut Menu")?;
+
         normal.bind(
             &[";", "Q"],
             "quit the editor",
@@ -83,28 +85,31 @@ fn main() -> anyhow::Result<()> {
             }),
         )?;
 
-        insert.set_backup(Some(Rc::new(|s, chord| {
-            let (bufs, cursor) = s.get::<(&mut BufferList, &mut CursorSet)>();
-            let buf = bufs.get(0).unwrap();
-            let mut bound = cursor.bind(buf);
+        insert.set_backup(
+            Rc::new(|s, chord| {
+                let (bufs, cursor) = s.get::<(&mut BufferList, &mut CursorSet)>();
+                let buf = bufs.get(0).unwrap();
+                let mut bound = cursor.bind(buf);
 
-            // Don't handle anything other than shift
-            if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
-                return Ok(());
-            }
+                // Don't handle anything other than shift
+                if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
+                    return Ok(());
+                }
 
-            let key_string = match chord.code {
-                KeyCode::Char(c) => match chord.mods.contains(KeyModifiers::SHIFT) {
-                    false => c.to_string(),
-                    true => c.to_ascii_uppercase().to_string(),
-                },
-                _ => return Ok(()),
-            };
+                let key_string = match chord.code {
+                    KeyCode::Char(c) => match chord.mods.contains(KeyModifiers::SHIFT) {
+                        false => c.to_string(),
+                        true => c.to_ascii_uppercase().to_string(),
+                    },
+                    _ => return Ok(()),
+                };
 
-            bound.insert(key_string.as_str(), &CursorOptions::default());
+                bound.insert(key_string.as_str(), &CursorOptions::default());
 
-            Ok(())
-        })));
+                Ok(())
+            }),
+            "Any Other Key - Insert Text",
+        );
     }
 
     editor.get::<&mut BufferList>().file("./Cargo.toml")?;
