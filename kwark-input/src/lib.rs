@@ -117,8 +117,8 @@ impl<S: 'static> InputNode<S> {
 
     pub fn desc(&self) -> &str {
         match self {
-            Self::Node { desc, .. } => &desc,
-            Self::Leaf { desc, .. } => &desc,
+            Self::Node { desc, .. } => desc,
+            Self::Leaf { desc, .. } => desc,
         }
     }
 
@@ -220,7 +220,7 @@ impl<S: 'static> InputTree<S> {
                     && let Some(backup) = &self.backup
                 {
                     let chords = std::mem::take(&mut self.current);
-                    let last = chords.last().expect("Length checked to be 1").clone();
+                    let last = *chords.last().expect("Length checked to be 1");
                     let backup = backup.clone();
 
                     return Step::Complete(Rc::new(move |state| backup(state, last)), chords);
@@ -258,10 +258,10 @@ impl<S: 'static> InputTree<S> {
 
     pub fn set_backup(
         &mut self,
-        backup: Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<()> + 'static>,
+        backup: impl Fn(&mut S, Chord) -> anyhow::Result<()> + 'static,
         desc: impl Into<String>,
     ) {
-        self.backup = Some(backup);
+        self.backup = Some(Rc::new(backup));
         self.backup_desc = Some(desc.into());
     }
 
@@ -380,7 +380,7 @@ impl<S: 'static> InputState<S> {
     pub fn is_active(&self) -> bool {
         self.trees
             .get(&self.mode)
-            .map(|x| x.current.len() > 0)
+            .map(|x| x.current.is_empty())
             .unwrap_or(false)
     }
 

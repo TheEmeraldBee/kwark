@@ -1,145 +1,294 @@
-use std::{collections::HashMap, fmt::Display, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
-mod buffer;
-pub use buffer::*;
+use kwark_text_buffer as text;
 
-mod error;
-pub use error::*;
-
-mod operation;
-use normpath::PathExt;
-pub(crate) use operation::*;
-
-mod cursor;
-pub use cursor::*;
-
-pub struct BufferEntry {
-    pub buffer: Buffer,
-    kind: BufferKind,
+/// Some kind of text that can be rendered/used as a buffer
+pub enum Buffer {
+    Text {
+        path: PathBuf,
+        buf: text::BufferEntry,
+        cursors: text::CursorSet,
+    },
+    Widget(ratatui::buffer::Buffer),
 }
 
-impl BufferEntry {
-    pub fn new_scratch(name: String) -> Self {
-        Self {
-            buffer: Buffer::default(),
-            kind: BufferKind::Scratch(name),
-        }
-    }
-
-    pub fn new_file(filepath: PathBuf) -> Result<Self> {
-        let canon_path = filepath.normalize()?;
-
-        let file = std::fs::File::open(&canon_path)?;
-
-        let buf = Buffer::from_reader(file)?;
-
-        Ok(Self {
-            buffer: buf,
-            kind: BufferKind::File(filepath),
-        })
-    }
-
-    /// Retrieves the kind of the buffer from it's entry
-    pub fn kind(&self) -> &BufferKind {
-        &self.kind
-    }
-}
-
-#[derive(PartialEq, Eq, Hash)]
-pub enum BufferKind {
-    Scratch(String),
-    File(PathBuf),
-}
-
-impl Display for BufferKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Buffer {
+    /// Creates a new index for the Buffer given an incrementable index
+    pub fn create_index(&self, tracker: &mut usize) -> ID {
         match self {
-            Self::Scratch(name) => write!(f, "{name}"),
-            Self::File(path) => write!(f, "{}", path.display()),
+            Self::Text { path, .. } => ID::Text(path.clone()),
+            Self::Widget(_) => {
+                let id = ID::Widget(*tracker);
+                *tracker += 1;
+                id
+            }
         }
     }
-}
 
-/// An index that can index into a buffer-list
-pub type BufferID = u32;
+    /// Given the window and an area, render the widget to that location
+    pub fn render(&self, frame: &mut ratatui::Frame<'_>, rect: ratatui::layout::Rect) {
+        use ratatui::prelude::*;
+        use ratatui::widgets::*;
 
-/// A list of buffers to handle storage and data for the buffers
-#[derive(Default)]
-pub struct BufferList {
-    buffers: HashMap<BufferID, BufferEntry>,
-    by_kind: HashMap<BufferKind, BufferID>,
-    next_id: BufferID,
-}
+        match self {
+            Self::Text { buf, .. } => {
+                let lines = buf
+                    .buffer
+                    .viewport((0, 0), (rect.height as usize, rect.width as usize))
+                    .into_iter()
+                    .map(|x| Line::raw(x.text))
+                    .collect::<Vec<_>>();
 
-impl BufferList {
-    /// Create a new buffer by loading the file into memory
+                frame.render_widget(Paragraph::new(lines), rect);
+            }
+            Self::Widget(_) => {}
+        }
+    }
+
+    /// Moves the cursor by lines, then columns, if wrap is true, columns will allow you to move to other lines
     ///
-    /// If the file is already in memory, fetches it for you.
-    pub fn file(&mut self, path: impl Into<PathBuf>) -> Result<BufferID> {
-        let path = path.into();
-        let kind = BufferKind::File(path.clone());
-
-        if let Some(id) = self.by_kind.get(&kind) {
-            return Ok(*id);
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn move_(&mut self, lines: isize, columns: isize, options: &text::CursorOptions) -> bool {
+        match self {
+            Self::Text { buf, cursors, .. } => {
+                cursors.move_(&buf.buffer, lines, columns, options);
+                true
+            }
+            Self::Widget(_) => false,
         }
-
-        let id = self.next_id;
-
-        let buf = BufferEntry::new_file(path)?;
-
-        self.buffers.insert(id, buf);
-        self.by_kind.insert(kind, id);
-
-        self.next_id += 1;
-
-        Ok(id)
     }
 
-    /// Create a new buffer with the given name, initializing it as empty
-    pub fn scratch(&mut self, name: String) -> BufferID {
-        let kind = BufferKind::Scratch(name.clone());
+    /// Sets **only** the primary cursor's position to the given line/col, clamping line then column.
+    /// Ignores the value set in [`CursorOptions::all`]
+    ///
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn set(&mut self, line: usize, col: usize, options: &text::CursorOptions) -> bool {
+        match self {
+            Self::Text { buf, cursors, .. } => {
+                cursors.set(&buf.buffer, line, col, options);
+                true
+            }
+            Self::Widget(_) => false,
+        }
+    }
 
-        if let Some(id) = self.by_kind.get(&kind) {
-            return *id;
+    /// Deletes all cursors other than the primary
+    ///
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn remove_other(&mut self) -> bool {
+        match self {
+            Self::Text { cursors, .. } => {
+                cursors.remove_other();
+                true
+            }
+            Self::Widget(_) => false,
+        }
+    }
+
+    /// Deletes the primary cursor
+    ///
+    /// Does nothing if it's the last cursor
+    ///
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn remove(&mut self) -> bool {
+        match self {
+            Self::Text { cursors, .. } => {
+                cursors.remove();
+                true
+            }
+            Self::Widget(_) => false,
+        }
+    }
+
+    /// Inserts text into the buffer at the cursor's current position
+    ///
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn insert(&mut self, text: &str, options: &text::CursorOptions) -> bool {
+        match self {
+            Self::Text { buf, cursors, .. } => {
+                cursors.insert(&mut buf.buffer, text, options);
+                true
+            }
+            Self::Widget(_) => false,
+        }
+    }
+
+    /// Deletes the currently selected text for the cursor
+    ///
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn delete(&mut self, options: &text::CursorOptions) -> bool {
+        match self {
+            Self::Text { buf, cursors, .. } => {
+                cursors.delete(&mut buf.buffer, options);
+                true
+            }
+            Self::Widget(_) => false,
+        }
+    }
+
+    /// Swaps the head and tail (anchor and caret) of the cursor
+    ///
+    /// Returns `true` if the underlying buffer supports cursor movement
+    pub fn swap(&mut self, options: &text::CursorOptions) -> bool {
+        match self {
+            Self::Text { cursors, .. } => {
+                cursors.swap(options);
+                true
+            }
+            Self::Widget(_) => false,
+        }
+    }
+}
+
+/// A basic Identifier to differentiate between different buffers
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ID {
+    Text(PathBuf),
+    Widget(usize),
+}
+
+/// A basic storage for a list of Buffers
+#[derive(Default)]
+pub struct Storage {
+    next_id: usize,
+    inner: HashMap<ID, Buffer>,
+}
+
+impl Storage {
+    /// Iterate through all of the active buffers
+    pub fn iter(&self) -> impl Iterator<Item = (&ID, &Buffer)> {
+        self.inner.iter()
+    }
+
+    /// Iterate through all of the active buffers
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (&ID, &mut Buffer)> {
+        self.inner.iter_mut()
+    }
+
+    /// Retrieves a buffer with the given ID from storage,
+    /// Returns [`None`] if the ID isn't stored.
+    ///
+    /// For an immutable version, see [`Self::get_mut`]
+    pub fn get_mut(&mut self, id: &ID) -> Option<&mut Buffer> {
+        self.inner.get_mut(id)
+    }
+
+    /// Retrieves a buffer with the given ID from storage,
+    /// Returns [`None`] if the ID isn't stored.
+    ///
+    /// For a mutable version, see [`Self::get_mut`]
+    pub fn get(&self, id: &ID) -> Option<&Buffer> {
+        self.inner.get(id)
+    }
+
+    /// Retrieves the buffer with the given ID, or inserts a new Buffer created with a new ID
+    ///
+    /// Returns an ([`ID`], [`Buffer`]) pair
+    pub fn get_or_insert(&mut self, id: ID, creator: impl FnOnce() -> Buffer) -> (ID, &mut Buffer) {
+        if self.inner.contains_key(&id) {
+            let buf = self
+                .get_mut(&id)
+                .expect("Value was just checked for existance");
+
+            return (id, buf);
         }
 
-        let id = self.next_id;
+        let buf = creator();
+        let id = buf.create_index(&mut self.next_id);
 
-        let buf = BufferEntry::new_scratch(name);
+        self.inner.insert(id.clone(), buf);
 
-        self.buffers.insert(id, buf);
-        self.by_kind.insert(kind, id);
+        let buf = self
+            .inner
+            .get_mut(&id)
+            .expect("Value was just inserted into the buffer");
 
-        self.next_id += 1;
+        (id, buf)
+    }
+
+    /// Creates a new buffer with the given ID, trashes the old buffer if the ID already existed
+    pub fn insert(&mut self, buf: Buffer) -> ID {
+        let id = buf.create_index(&mut self.next_id);
+
+        self.inner.insert(id.clone(), buf);
 
         id
     }
 
-    /// Remove a buffer by id from the list
-    pub fn delete(&mut self, id: BufferID) -> bool {
-        let Some(buf) = self.buffers.remove(&id) else {
-            return false;
-        };
+    /// Checks if the ID exists within the storage
+    pub fn has(&self, id: &ID) -> bool {
+        self.inner.contains_key(id)
+    }
+}
 
-        self.by_kind.remove(&buf.kind);
+/// A storage of [`ID`]s with an actively selected buffer
+pub struct List {
+    active: usize,
+    ids: Vec<ID>,
+}
 
-        true
+impl List {
+    /// Sets the actively selected buffer to the passed [`ID`]
+    ///
+    /// If not already in the list, inserts it
+    pub fn select(&mut self, id: ID) {
+        if let Some((i, _)) = self.ids.iter().enumerate().find(|(_, x)| **x == id) {
+            self.active = i;
+            return;
+        }
+
+        self.active = self.ids.len();
+        self.ids.push(id);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&BufferID, &BufferEntry)> {
-        self.buffers.iter()
+    /// Returns the actively selected [`ID`] for the List
+    ///
+    /// Returns [`None`] if no buffer was selected
+    pub fn selected(&self) -> Option<ID> {
+        if self.ids.is_empty() {
+            return None;
+        }
+
+        Some(self.ids[self.active].clone())
     }
 
-    /// Retrieves the buffer by ID
-    pub fn get(&mut self, id: BufferID) -> Option<&mut Buffer> {
-        let buf = self.buffers.get_mut(&id)?;
+    /// Closes the currently selected buffer
+    pub fn close_primary(&mut self) {
+        if self.ids.is_empty() {
+            return;
+        }
 
-        Some(&mut buf.buffer)
+        self.ids.remove(self.active);
+        self.active = self.active.saturating_sub(1);
     }
 
-    pub fn get_raw(&mut self, id: BufferID) -> Option<&mut BufferEntry> {
-        let buf = self.buffers.get_mut(&id)?;
+    /// Closes all buffers other than the currently selected one
+    pub fn close_other(&mut self) {
+        let id = self.ids.remove(self.active);
+        self.ids.clear();
 
-        Some(buf)
+        self.active = 0;
+
+        self.ids.push(id);
+    }
+
+    /// Moves the primary selection the given distance
+    ///
+    /// Wraps if going `< 0` or `> list length`
+    pub fn move_primary(&mut self, dist: isize) {
+        let optional = self.active as isize + dist;
+        self.active = optional.rem_euclid(self.ids.len() as isize) as usize;
+    }
+
+    /// Remove the id from the list
+    pub fn remove(&mut self, id: ID) {
+        self.ids.retain(|x| *x != id);
+    }
+
+    /// Updates the List to match the Storage's stored IDs
+    pub fn update(&mut self, storage: &Storage) {
+        self.ids.retain(|x| storage.has(x));
+
+        self.active = self.active.min(self.ids.len() - 1);
     }
 }

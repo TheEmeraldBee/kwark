@@ -1,10 +1,10 @@
 [package]
-name = "kwark-buffer"
+name = "kwark-text-buffer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-kwark-text-buffer.workspace = true
-
-ratatui.workspace = true
+normpath = "1.5.1"
+ropey = "1.6.1"
+thiserror.workspace = true

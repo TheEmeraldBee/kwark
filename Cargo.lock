@@ -547,6 +547,7 @@ dependencies = [
  "crossterm",
  "kwark-buffer",
  "kwark-input",
+ "kwark-text-buffer",
  "ratatui",
 ]
 
@@ -554,9 +555,8 @@ dependencies = [
 name = "kwark-buffer"
 version = "0.0.0"
 dependencies = [
- "normpath",
- "ropey",
- "thiserror 2.0.18",
+ "kwark-text-buffer",
+ "ratatui",
 ]
 
 [[package]]
@@ -573,6 +573,15 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kwark-text-buffer"
+version = "0.0.0"
+dependencies = [
+ "normpath",
+ "ropey",
  "thiserror 2.0.18",
 ]
 

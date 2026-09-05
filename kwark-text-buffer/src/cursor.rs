@@ -294,22 +294,22 @@ impl CursorSet {
         let mut merged: Vec<Cursor> = Vec::with_capacity(cursors.len());
 
         for cursor in cursors {
-            if let Some(last) = merged.last_mut() {
-                if cursor.start() <= last.end() {
-                    let forward = last.caret >= last.anchor;
-                    let start = last.start().min(cursor.start());
-                    let end = last.end().max(cursor.end());
+            if let Some(last) = merged.last_mut()
+                && cursor.start() <= last.end()
+            {
+                let forward = last.caret >= last.anchor;
+                let start = last.start().min(cursor.start());
+                let end = last.end().max(cursor.end());
 
-                    if forward {
-                        last.anchor = start;
-                        last.caret = end;
-                    } else {
-                        last.anchor = end;
-                        last.caret = start;
-                    }
-
-                    continue;
+                if forward {
+                    last.anchor = start;
+                    last.caret = end;
+                } else {
+                    last.anchor = end;
+                    last.caret = start;
                 }
+
+                continue;
             }
 
             merged.push(cursor);

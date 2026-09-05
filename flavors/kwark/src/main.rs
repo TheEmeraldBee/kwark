@@ -1,12 +1,13 @@
 use std::rc::Rc;
 
+use kwark::prelude::text_buffer::{BufferEntry, CursorOptions, CursorSet};
 pub use kwark::prelude::*;
 
 fn main() -> anyhow::Result<()> {
     // Initialize the editor
     let mut editor = kwark::init();
 
-    editor.insert(CursorSet::new());
+    editor.insert(text_buffer::CursorSet::new());
 
     // Retrieve the input state from the editor
     let input = editor.get::<&mut InputState>();
@@ -45,6 +46,15 @@ fn main() -> anyhow::Result<()> {
                 Ok(())
             }),
         )?;
+
+        normal.bind(
+            &["?"],
+            "Show possible keys",
+            Rc::new(|s| {
+                s.get::<&mut Flags>().set("input_tree_show", true);
+                Ok(())
+            }),
+        )?;
     }
 
     // Bind a bunch of insert mode keybinds
@@ -64,8 +74,13 @@ fn main() -> anyhow::Result<()> {
             &["enter"],
             "Insert Newline",
             Rc::new(|s| {
-                let bufs = s.get::<&mut BufferList>();
-                bufs.get(0).unwrap().insert(0, 0, "\n")?;
+                let bufs = s.get::<&mut buffer::Storage>();
+
+                bufs.iter_mut()
+                    .next()
+                    .unwrap()
+                    .1
+                    .insert("\n", &CursorOptions::default());
 
                 Ok(())
             }),
@@ -75,21 +90,23 @@ fn main() -> anyhow::Result<()> {
             &["space"],
             "Insert Space",
             Rc::new(|s| {
-                let (bufs, cursor) = s.get::<(&mut BufferList, &mut CursorSet)>();
-                let buf = bufs.get(0).unwrap();
-                let mut bound = cursor.bind(buf);
+                let bufs = s.get::<&mut buffer::Storage>();
 
-                bound.insert(" ", &CursorOptions::default());
+                bufs.iter_mut()
+                    .next()
+                    .unwrap()
+                    .1
+                    .insert(" ", &text_buffer::CursorOptions::default());
 
                 Ok(())
             }),
         )?;
 
         insert.set_backup(
-            Rc::new(|s, chord| {
-                let (bufs, cursor) = s.get::<(&mut BufferList, &mut CursorSet)>();
-                let buf = bufs.get(0).unwrap();
-                let mut bound = cursor.bind(buf);
+            |s, chord| {
+                let bufs = s.get::<&mut buffer::Storage>();
+
+                let buf = bufs.iter_mut().next().unwrap().1;
 
                 // Don't handle anything other than shift
                 if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
@@ -104,15 +121,21 @@ fn main() -> anyhow::Result<()> {
                     _ => return Ok(()),
                 };
 
-                bound.insert(key_string.as_str(), &CursorOptions::default());
+                buf.insert(key_string.as_str(), &CursorOptions::default());
 
                 Ok(())
-            }),
-            "Any Other Key - Insert Text",
+            },
+            "Insert Pressed",
         );
     }
 
-    editor.get::<&mut BufferList>().file("./Cargo.toml")?;
+    editor
+        .get::<&mut buffer::Storage>()
+        .insert(buffer::Buffer::Text {
+            path: "./Cargo.toml".into(),
+            buf: BufferEntry::new_file("./Cargo.toml".into())?,
+            cursors: CursorSet::default(),
+        });
 
     // Run the actual editor
     editor.run();

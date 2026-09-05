@@ -1,7 +1,6 @@
 use std::{io::stdout, time::Duration};
 
 use crossterm::event;
-use kwark_buffer::BufferList;
 pub use kwark_input::{Chord, Step};
 pub type InputState = kwark_input::InputState<State>;
 use ratatui::{
@@ -11,13 +10,19 @@ use ratatui::{
 };
 
 pub mod prelude {
+    pub use crate::Flags;
     pub use crate::InputState;
     pub use crate::Running;
     pub use crate::State;
+
     pub use crossterm::event::{KeyCode, KeyModifiers};
-    pub use kwark_buffer::*;
     pub use kwark_input::{Chord, Step};
+
+    pub use kwark_buffer as buffer;
+    pub use kwark_text_buffer as text_buffer;
 }
+
+use kwark_buffer as buffer;
 
 mod state;
 
@@ -41,7 +46,7 @@ pub fn init() -> Editor {
 
 impl Editor {
     pub fn init(&mut self) {
-        self.state.insert(BufferList::default());
+        self.state.insert(buffer::Storage::default());
         self.state.insert(InputState::new("normal"));
         self.state.insert(Running(true));
     }
@@ -87,9 +92,13 @@ impl Editor {
                             Step::Complete(c, _chords) => {
                                 c(&mut self.state)?;
                             }
-                            _ => {}
+                            Step::Step => {
+                                self.state.get::<&mut Flags>().set("input_tree_show", true)
+                            }
+                            Step::Failed => {
+                                self.state.get::<&mut Flags>().set("input_tree_show", false)
+                            }
                         };
-                        // self.events.handle(&mut self.state, &mut events::Input(k))?;
                     }
                     _ => {}
                 }
@@ -108,20 +117,20 @@ impl Editor {
             // TODO: The Top Bar is also a set of left, middle, and right text that is fully customizable
 
             term.draw(|frame| {
-                let bufs = self.state.get::<&mut BufferList>();
+                let bufs = self.state.get::<&mut buffer::Storage>();
 
-                let lines = bufs
-                    .get(0)
-                    .map(|buf| buf.viewport((0, 0), (100, 100)))
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|x| Line::raw(x.text))
-                    .collect::<Vec<_>>();
+                match bufs.iter().next() {
+                    Some((_, buf)) => buf.render(frame, frame.area()),
+                    None => {
+                        frame.render_widget(
+                            Paragraph::new("Kwark").centered().green(),
+                            frame.area(),
+                        );
+                    }
+                };
 
-                frame.render_widget(Paragraph::new(lines), frame.area());
-
-                let state = self.state.get::<&InputState>();
-                if state.is_active() || true {
+                let (state, flags) = self.state.get::<(&InputState, &Flags)>();
+                if flags.get("input_tree_show") {
                     let lines = state
                         .get_layer()
                         .iter()
