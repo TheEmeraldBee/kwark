@@ -548,6 +548,7 @@ dependencies = [
  "kwark-buffer",
  "kwark-input",
  "kwark-text-buffer",
+ "kwark-text-buffer-renderer",
  "ratatui",
 ]
 
@@ -556,6 +557,7 @@ name = "kwark-buffer"
 version = "0.0.0"
 dependencies = [
  "kwark-text-buffer",
+ "kwark-text-buffer-renderer",
  "ratatui",
 ]
 
@@ -565,6 +567,8 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "kwark",
+ "ratatui",
+ "ropey",
 ]
 
 [[package]]
@@ -583,6 +587,15 @@ dependencies = [
  "normpath",
  "ropey",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kwark-text-buffer-renderer"
+version = "0.0.0"
+dependencies = [
+ "kwark-text-buffer",
+ "ratatui",
+ "ropey",
 ]
 
 [[package]]

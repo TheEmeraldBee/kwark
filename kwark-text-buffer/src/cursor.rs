@@ -53,12 +53,16 @@ pub struct Cursor {
 }
 
 impl Cursor {
-    fn start(&self) -> usize {
+    pub fn start(&self) -> usize {
         self.anchor.min(self.caret)
     }
 
-    fn end(&self) -> usize {
+    pub fn end(&self) -> usize {
         self.anchor.max(self.caret)
+    }
+
+    pub fn caret(&self) -> usize {
+        self.caret
     }
 }
 
@@ -85,6 +89,10 @@ impl CursorSet {
             }],
             primary: 0,
         }
+    }
+
+    pub fn cursors(&self) -> &[Cursor] {
+        &self.cursors
     }
 
     /// Applies the function depending on the cursor options
@@ -238,7 +246,7 @@ impl CursorSet {
                 cursor.anchor = cursor.caret;
             }
 
-            cursor.desired_col = col + len;
+            cursor.desired_col = buf.char_to_line_col(cursor.caret).1;
         });
     }
 

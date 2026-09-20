@@ -2,7 +2,10 @@ use std::{io::stdout, time::Duration};
 
 use crossterm::event;
 pub use kwark_input::{Chord, Step};
+
 pub type InputState = kwark_input::InputState<State>;
+pub type InputTree = kwark_input::InputTree<State>;
+
 use ratatui::{
     macros::{horizontal, vertical},
     prelude::*,
@@ -12,6 +15,7 @@ use ratatui::{
 pub mod prelude {
     pub use crate::Flags;
     pub use crate::InputState;
+    pub use crate::InputTree;
     pub use crate::Running;
     pub use crate::State;
 
@@ -20,9 +24,13 @@ pub mod prelude {
 
     pub use kwark_buffer as buffer;
     pub use kwark_text_buffer as text_buffer;
+    pub use kwark_text_buffer_renderer as text_render;
+
+    pub use crate::Pipeline;
 }
 
 use kwark_buffer as buffer;
+pub type Pipeline = kwark_text_buffer_renderer::Pipeline<State>;
 
 mod state;
 
@@ -47,6 +55,7 @@ pub fn init() -> Editor {
 impl Editor {
     pub fn init(&mut self) {
         self.state.insert(buffer::Storage::default());
+        self.state.insert(Pipeline::default());
         self.state.insert(InputState::new("normal"));
         self.state.insert(Running(true));
     }
@@ -117,10 +126,14 @@ impl Editor {
             // TODO: The Top Bar is also a set of left, middle, and right text that is fully customizable
 
             term.draw(|frame| {
-                let bufs = self.state.get::<&mut buffer::Storage>();
+                // Remove needed states from the storage
+                let bufs = self.state.take::<buffer::Storage>();
+                let mut pipeline = self.state.take::<Pipeline>();
 
                 match bufs.iter().next() {
-                    Some((_, buf)) => buf.render(frame, frame.area()),
+                    Some((_, buf)) => {
+                        buf.render(&mut pipeline, &mut self.state, frame, frame.area())
+                    }
                     None => {
                         frame.render_widget(
                             Paragraph::new("Kwark").centered().green(),
@@ -128,6 +141,10 @@ impl Editor {
                         );
                     }
                 };
+
+                // Re-insert the states
+                self.state.insert(bufs);
+                self.state.insert(pipeline);
 
                 let (state, flags) = self.state.get::<(&InputState, &Flags)>();
                 if flags.get("input_tree_show") {

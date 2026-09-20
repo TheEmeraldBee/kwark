@@ -141,6 +141,20 @@ impl State {
         T::get_many_any(&mut self.inner).expect("Types should be checked and inserted early")
     }
 
+    /// Pull/take the value out of the editor
+    ///
+    /// # IMPORTANT
+    /// You should almost **always** insert the
+    /// state back into the editor when you are done with it
+    pub fn take<T: Any + 'static>(&mut self) -> T {
+        *self
+            .inner
+            .remove(&TypeId::of::<T>())
+            .expect("Type expected to exist within the editor")
+            .downcast::<T>()
+            .expect("Value should be the right type")
+    }
+
     /// Returns the sender for a callback fn to be put into a thread/event
     pub fn sender(&self) -> CallbackSender {
         CallbackSender(self.callback_tx.clone())

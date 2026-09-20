@@ -1,6 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use kwark_text_buffer as text;
+use kwark_text_buffer_renderer::Pipeline;
 
 /// Some kind of text that can be rendered/used as a buffer
 pub enum Buffer {
@@ -25,21 +26,25 @@ impl Buffer {
         }
     }
 
-    /// Given the window and an area, render the widget to that location
-    pub fn render(&self, frame: &mut ratatui::Frame<'_>, rect: ratatui::layout::Rect) {
-        use ratatui::prelude::*;
-        use ratatui::widgets::*;
-
+    /// Given the window, an area, and a pipeline, render the widget to that location
+    pub fn render<S>(
+        &self,
+        pipeline: &mut Pipeline<S>,
+        state: &mut S,
+        frame: &mut ratatui::Frame<'_>,
+        rect: ratatui::layout::Rect,
+    ) {
         match self {
-            Self::Text { buf, .. } => {
-                let lines = buf
-                    .buffer
-                    .viewport((0, 0), (rect.height as usize, rect.width as usize))
-                    .into_iter()
-                    .map(|x| Line::raw(x.text))
-                    .collect::<Vec<_>>();
-
-                frame.render_widget(Paragraph::new(lines), rect);
+            Self::Text { buf, cursors, .. } => {
+                let carets = cursors.cursors();
+                pipeline.render(
+                    buf.buffer.rope(),
+                    state,
+                    0,
+                    carets,
+                    rect,
+                    frame.buffer_mut(),
+                );
             }
             Self::Widget(_) => {}
         }

@@ -1,11 +1,11 @@
 [package]
-name = "kwark-buffer"
+name = "kwark-text-buffer-renderer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 kwark-text-buffer.workspace = true
-kwark-text-buffer-renderer.workspace = true
 
 ratatui.workspace = true
+ropey = "1.6.1"

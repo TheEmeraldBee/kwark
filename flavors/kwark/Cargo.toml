@@ -11,3 +11,7 @@ path = "src/main.rs"
 [dependencies]
 kwark = { version = "0.0.0", path = "../../kwark" }
 anyhow.workspace = true
+ratatui.workspace = true
+
+[dev-dependencies]
+ropey = "1.6.1"

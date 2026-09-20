@@ -1,5 +1,5 @@
 [workspace]
-members = ["flavors/*", "kwark", "kwark-text-buffer", "kwark-input", "kwark-buffer"]
+members = ["flavors/*", "kwark", "kwark-text-buffer", "kwark-text-buffer-renderer", "kwark-input", "kwark-buffer"]
 resolver = "3"
 
 [workspace.package]
@@ -10,6 +10,7 @@ license = "MIT"
 [workspace.dependencies]
 kwark-buffer = { version = "0.0.0", path = "./kwark-buffer" }
 kwark-text-buffer = { version = "0.0.0", path = "./kwark-text-buffer" }
+kwark-text-buffer-renderer = { version = "0.0.0", path = "./kwark-text-buffer-renderer" }
 kwark-input = { version = "0.0.0", path = "./kwark-input" }
 
 # Error Handling

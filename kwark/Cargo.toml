@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 kwark-text-buffer.workspace = true
+kwark-text-buffer-renderer.workspace = true
 kwark-buffer.workspace = true
 
 kwark-input.workspace = true
