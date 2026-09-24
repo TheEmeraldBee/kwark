@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use crate::Buffer;
 
 fn shift_clamped(buffer: &Buffer, pivot: usize, pos: usize, distance: isize) -> usize {
@@ -70,6 +72,12 @@ impl Cursor {
 pub struct CursorSet {
     cursors: Vec<Cursor>,
     primary: usize,
+
+    /// Cursor state as it was at the last commit boundary, before the in-progress edit
+    pre_edit: (Vec<Cursor>, usize),
+
+    undo_stack: Vec<(Vec<Cursor>, usize)>,
+    redo_stack: Vec<(Vec<Cursor>, usize)>,
 }
 
 impl Default for CursorSet {
@@ -80,15 +88,63 @@ impl Default for CursorSet {
 
 impl CursorSet {
     pub fn new() -> Self {
-        CursorSet {
-            cursors: vec![Cursor {
-                anchor: 0,
-                caret: 0,
+        let cursors = vec![Cursor {
+            anchor: 0,
+            caret: 0,
 
-                desired_col: 0,
-            }],
+            desired_col: 0,
+        }];
+
+        CursorSet {
+            cursors: cursors.clone(),
             primary: 0,
+
+            pre_edit: (cursors, 0),
+
+            undo_stack: vec![],
+            redo_stack: vec![],
         }
+    }
+
+    /// Commits the cursor state from before the just-finished edit into the undo/redo stack
+    pub fn commit(&mut self) {
+        self.undo_stack.push(std::mem::replace(
+            &mut self.pre_edit,
+            (self.cursors.clone(), self.primary),
+        ));
+
+        self.redo_stack.clear();
+    }
+
+    /// Pops from the undo-stack and restores the cursors to their state before that edit
+    ///
+    /// Does nothing if stack is empty
+    pub fn undo(&mut self) {
+        let Some((cursors, primary)) = self.undo_stack.pop() else {
+            return;
+        };
+
+        let cursors_redo = self.cursors.clone();
+        let primary_redo = self.primary;
+        self.redo_stack.push((cursors_redo, primary_redo));
+
+        self.cursors = cursors;
+        self.primary = primary;
+
+        self.pre_edit = (self.cursors.clone(), self.primary);
+    }
+
+    pub fn redo(&mut self) {
+        let Some((cursors, primary)) = self.redo_stack.pop() else {
+            return;
+        };
+
+        self.undo_stack.push((self.cursors.clone(), self.primary));
+
+        self.cursors = cursors;
+        self.primary = primary;
+
+        self.pre_edit = (self.cursors.clone(), self.primary);
     }
 
     pub fn cursors(&self) -> &[Cursor] {
@@ -360,6 +416,20 @@ pub struct BoundCursorSet<'a> {
     buf: &'a mut Buffer,
 }
 
+impl<'a> Deref for BoundCursorSet<'a> {
+    type Target = Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        self.buf
+    }
+}
+
+impl<'a> DerefMut for BoundCursorSet<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.buf
+    }
+}
+
 impl<'a> BoundCursorSet<'a> {
     /// Moves the cursor by lines, then columns, if wrap is true, columns will allow you to move to other lines
     pub fn move_(&mut self, lines: isize, columns: isize, options: &CursorOptions) {
@@ -397,5 +467,30 @@ impl<'a> BoundCursorSet<'a> {
     /// Swaps the head and tail (anchor and caret) of the cursor
     pub fn swap(&mut self, options: &CursorOptions) {
         self.set.swap(options);
+    }
+
+    /// Commits current change on buffer, as well as storing the cursors in the undo stack
+    pub fn commit_change(&mut self) {
+        if self.buf.commit_change() {
+            self.set.commit();
+        }
+    }
+
+    /// Undoes a change on the buffer, and restores the cursors
+    pub fn undo(&mut self) {
+        self.buf.undo();
+        self.set.undo();
+
+        // Force-update the cursors **just** in case
+        self.move_(0, 0, &CursorOptions::default());
+    }
+
+    /// Redoes a change on the buffer, and restores the cursors
+    pub fn redo(&mut self) {
+        self.buf.redo();
+        self.set.redo();
+
+        // Force-update the cursors **just** in case
+        self.move_(0, 0, &CursorOptions::default());
     }
 }

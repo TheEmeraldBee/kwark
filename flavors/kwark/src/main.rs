@@ -6,6 +6,15 @@ pub use kwark::prelude::*;
 mod highlighter;
 use highlighter::CursorHighlighter;
 
+fn commit_changes(state: &mut State) {
+    let bufs = state.get::<&mut buffer::Storage>();
+    let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+        return;
+    };
+
+    buf.commit_change();
+}
+
 fn create_move_cursor(
     lines: isize,
     columns: isize,
@@ -14,11 +23,11 @@ fn create_move_cursor(
     return Rc::new(move |s: &mut State| {
         let bufs = s.get::<&mut buffer::Storage>();
 
-        let Some(buf) = bufs.iter_mut().next() else {
+        let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
             return Ok(());
         };
 
-        buf.1.move_(lines, columns, &options);
+        buf.move_(lines, columns, &options);
 
         Ok(())
     });
@@ -37,12 +46,15 @@ fn bind_movement(
         "Move Cursor Left",
         create_move_cursor(0, -1, options),
     )?;
+
     tree.bind(
         &[right],
         "Move Cursor Right",
         create_move_cursor(0, 1, options),
     )?;
+
     tree.bind(&[up], "Move Cursor Up", create_move_cursor(-1, 0, options))?;
+
     tree.bind(
         &[down],
         "Move Cursor Down",
@@ -92,10 +104,30 @@ fn main() -> anyhow::Result<()> {
         )?;
 
         normal.bind(
-            &["ctrl-c"],
-            "quit the editor",
+            &["u"],
+            "Undo",
             Rc::new(|s| {
-                s.get::<&mut Running>().quit();
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.undo();
+
+                Ok(())
+            }),
+        )?;
+
+        normal.bind(
+            &["U"],
+            "Redo",
+            Rc::new(|s| {
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.redo();
 
                 Ok(())
             }),
@@ -138,6 +170,9 @@ fn main() -> anyhow::Result<()> {
             "Switch to Normal mode",
             Rc::new(|s| {
                 s.get::<&mut InputState>().set_mode("normal");
+
+                commit_changes(s);
+
                 Ok(())
             }),
         )?;
@@ -148,7 +183,9 @@ fn main() -> anyhow::Result<()> {
             Rc::new(|s| {
                 let bufs = s.get::<&mut buffer::Storage>();
 
-                let buf = bufs.iter_mut().next().unwrap().1;
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
 
                 buf.move_(0, -1, &CursorOptions::new().extend(true).wrap(true));
                 buf.delete(&CursorOptions::new());
@@ -163,11 +200,11 @@ fn main() -> anyhow::Result<()> {
             Rc::new(|s| {
                 let bufs = s.get::<&mut buffer::Storage>();
 
-                bufs.iter_mut()
-                    .next()
-                    .unwrap()
-                    .1
-                    .insert("\n", &CursorOptions::default());
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.insert("\n", &CursorOptions::default());
 
                 Ok(())
             }),
@@ -179,11 +216,11 @@ fn main() -> anyhow::Result<()> {
             Rc::new(|s| {
                 let bufs = s.get::<&mut buffer::Storage>();
 
-                bufs.iter_mut()
-                    .next()
-                    .unwrap()
-                    .1
-                    .insert(" ", &text_buffer::CursorOptions::default());
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.insert(" ", &text_buffer::CursorOptions::default());
 
                 Ok(())
             }),
@@ -193,7 +230,9 @@ fn main() -> anyhow::Result<()> {
             |s, chord| {
                 let bufs = s.get::<&mut buffer::Storage>();
 
-                let buf = bufs.iter_mut().next().unwrap().1;
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
 
                 // Don't handle anything other than shift
                 if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {

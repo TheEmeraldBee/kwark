@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use kwark_text_buffer as text;
+use kwark_text_buffer::{self as text, BoundCursorSet};
 use kwark_text_buffer_renderer::Pipeline;
 
 /// Some kind of text that can be rendered/used as a buffer
@@ -50,97 +50,13 @@ impl Buffer {
         }
     }
 
-    /// Moves the cursor by lines, then columns, if wrap is true, columns will allow you to move to other lines
+    /// Attempts to turn the buffer into a text-buffer bound to the cursor
     ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn move_(&mut self, lines: isize, columns: isize, options: &text::CursorOptions) -> bool {
+    /// Returns `None` if the buffer isn't a text-buffer
+    pub fn as_text<'a>(&'a mut self) -> Option<BoundCursorSet<'a>> {
         match self {
-            Self::Text { buf, cursors, .. } => {
-                cursors.move_(&buf.buffer, lines, columns, options);
-                true
-            }
-            Self::Widget(_) => false,
-        }
-    }
-
-    /// Sets **only** the primary cursor's position to the given line/col, clamping line then column.
-    /// Ignores the value set in [`CursorOptions::all`]
-    ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn set(&mut self, line: usize, col: usize, options: &text::CursorOptions) -> bool {
-        match self {
-            Self::Text { buf, cursors, .. } => {
-                cursors.set(&buf.buffer, line, col, options);
-                true
-            }
-            Self::Widget(_) => false,
-        }
-    }
-
-    /// Deletes all cursors other than the primary
-    ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn remove_other(&mut self) -> bool {
-        match self {
-            Self::Text { cursors, .. } => {
-                cursors.remove_other();
-                true
-            }
-            Self::Widget(_) => false,
-        }
-    }
-
-    /// Deletes the primary cursor
-    ///
-    /// Does nothing if it's the last cursor
-    ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn remove(&mut self) -> bool {
-        match self {
-            Self::Text { cursors, .. } => {
-                cursors.remove();
-                true
-            }
-            Self::Widget(_) => false,
-        }
-    }
-
-    /// Inserts text into the buffer at the cursor's current position
-    ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn insert(&mut self, text: &str, options: &text::CursorOptions) -> bool {
-        match self {
-            Self::Text { buf, cursors, .. } => {
-                cursors.insert(&mut buf.buffer, text, options);
-                true
-            }
-            Self::Widget(_) => false,
-        }
-    }
-
-    /// Deletes the currently selected text for the cursor
-    ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn delete(&mut self, options: &text::CursorOptions) -> bool {
-        match self {
-            Self::Text { buf, cursors, .. } => {
-                cursors.delete(&mut buf.buffer, options);
-                true
-            }
-            Self::Widget(_) => false,
-        }
-    }
-
-    /// Swaps the head and tail (anchor and caret) of the cursor
-    ///
-    /// Returns `true` if the underlying buffer supports cursor movement
-    pub fn swap(&mut self, options: &text::CursorOptions) -> bool {
-        match self {
-            Self::Text { cursors, .. } => {
-                cursors.swap(options);
-                true
-            }
-            Self::Widget(_) => false,
+            Self::Text { buf, cursors, .. } => Some(cursors.bind(&mut buf.buffer)),
+            Self::Widget(_) => None,
         }
     }
 }
