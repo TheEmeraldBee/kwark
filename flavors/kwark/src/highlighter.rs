@@ -1,7 +1,7 @@
 use kwark::prelude::*;
 use ratatui::{
     style::{Modifier, Style},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 use text_render::*;
 

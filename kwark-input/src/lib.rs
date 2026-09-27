@@ -385,6 +385,8 @@ impl<S: 'static> InputState<S> {
     }
 
     /// Returns a list of items at the current layer of the input node
+    ///
+    /// Chords with an empty description aren't returned in the list
     pub fn get_layer(&self) -> Vec<(Option<Chord>, String)> {
         let mut out = vec![];
         let Some(tree) = self.trees.get(&self.mode) else {
@@ -401,6 +403,10 @@ impl<S: 'static> InputState<S> {
 
         // Add all children to the layer
         for child in found {
+            if child.desc().is_empty() {
+                continue;
+            }
+
             out.push((Some(child.key()), child.desc().to_string()));
         }
 

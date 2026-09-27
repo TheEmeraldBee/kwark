@@ -43,25 +43,13 @@ fn bind_movement(
     up: &str,
     down: &str,
 ) -> anyhow::Result<()> {
-    tree.bind(
-        &[left],
-        "Move Cursor Left",
-        create_move_cursor(0, -1, options),
-    )?;
+    tree.bind(&[left], "", create_move_cursor(0, -1, options))?;
 
-    tree.bind(
-        &[right],
-        "Move Cursor Right",
-        create_move_cursor(0, 1, options),
-    )?;
+    tree.bind(&[right], "", create_move_cursor(0, 1, options))?;
 
-    tree.bind(&[up], "Move Cursor Up", create_move_cursor(-1, 0, options))?;
+    tree.bind(&[up], "", create_move_cursor(-1, 0, options))?;
 
-    tree.bind(
-        &[down],
-        "Move Cursor Down",
-        create_move_cursor(1, 0, options),
-    )?;
+    tree.bind(&[down], "", create_move_cursor(1, 0, options))?;
 
     Ok(())
 }
@@ -99,7 +87,7 @@ fn main() -> anyhow::Result<()> {
 
         normal.bind(
             &[";", "Q"],
-            "quit the editor",
+            "Quit the Editor",
             Rc::new(|s| {
                 s.get::<&mut Running>().quit();
 
@@ -164,7 +152,7 @@ fn main() -> anyhow::Result<()> {
 
         normal.bind(
             &["?"],
-            "Show possible keys",
+            "Show layer inputs",
             Rc::new(|s| {
                 s.get::<&mut Flags>().set("input_tree_show", true);
                 Ok(())
