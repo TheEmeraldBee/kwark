@@ -1,5 +1,8 @@
 use kwark::prelude::*;
-use ratatui::style::{Modifier, Style};
+use ratatui::{
+    style::{Modifier, Style},
+    widgets::{Block, Borders, Paragraph, Widget},
+};
 use text_render::*;
 
 /// Highlights the character under every cursor in the buffer
@@ -33,5 +36,48 @@ impl Highlighter<State> for CursorHighlighter {
         } else {
             Some(Highlight::plain(spans))
         }
+    }
+}
+
+/// Highlights all text the same color
+pub struct ConstantHighlighter;
+
+impl Highlighter<State> for ConstantHighlighter {
+    fn highlight(&mut self, _state: &mut State, ctx: &LineCtx) -> Option<Highlight> {
+        let span = StyleSpan {
+            range: 0..ctx.text.len_chars(),
+            style: Style::default().fg(ratatui::style::Color::Rgb(201, 140, 176)),
+        };
+
+        Some(Highlight::plain(vec![span]))
+    }
+}
+
+pub struct HelloWorldRenderer;
+
+impl Renderer<State> for HelloWorldRenderer {
+    fn claim(&mut self, _state: &mut State, ctx: &LineCtx, _hl: &Highlight) -> Option<u16> {
+        if ctx.text.to_string().contains("freda") {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
+    fn render(
+        &mut self,
+        _state: &mut State,
+        ctx: &LineCtx,
+        hl: &Highlight,
+        area: ratatui::prelude::Rect,
+        buf: &mut ratatui::prelude::Buffer,
+    ) {
+        let text = ctx.text.to_string();
+
+        let text = text.replace("freda", "<3 Freda <3");
+
+        Paragraph::new(text)
+            .style(hl.spans[0].style)
+            .render(area, buf);
     }
 }

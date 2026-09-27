@@ -106,6 +106,13 @@ impl CursorSet {
         }
     }
 
+    pub fn reset_pre_edit(&mut self) {
+        let cursors = self.cursors.clone();
+        let primary = self.primary;
+
+        self.pre_edit = (cursors, primary);
+    }
+
     /// Commits the cursor state from before the just-finished edit into the undo/redo stack
     pub fn commit(&mut self) {
         self.undo_stack.push(std::mem::replace(
@@ -473,6 +480,8 @@ impl<'a> BoundCursorSet<'a> {
     pub fn commit_change(&mut self) {
         if self.buf.commit_change() {
             self.set.commit();
+        } else {
+            self.set.reset_pre_edit();
         }
     }
 

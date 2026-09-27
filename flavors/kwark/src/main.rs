@@ -6,6 +6,8 @@ pub use kwark::prelude::*;
 mod highlighter;
 use highlighter::CursorHighlighter;
 
+use crate::highlighter::{ConstantHighlighter, HelloWorldRenderer};
+
 fn commit_changes(state: &mut State) {
     let bufs = state.get::<&mut buffer::Storage>();
     let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
@@ -61,12 +63,6 @@ fn bind_movement(
         create_move_cursor(1, 0, options),
     )?;
 
-    // tree.desc_multi(
-    //     &[&[up], &[down], &[right], &[left]],
-    //     format!("{up}|{down}|{left}|{right}"),
-    //     "Move Cursor",
-    // );
-
     Ok(())
 }
 
@@ -81,10 +77,18 @@ fn main() -> anyhow::Result<()> {
     {
         let normal = input.tree("normal");
 
-        bind_movement(normal, CursorOptions::default(), "h", "l", "k", "j")?;
         bind_movement(
             normal,
-            CursorOptions::default(),
+            CursorOptions::default().wrap(true),
+            "h",
+            "l",
+            "k",
+            "j",
+        )?;
+
+        bind_movement(
+            normal,
+            CursorOptions::default().wrap(true),
             "left",
             "right",
             "up",
@@ -138,8 +142,24 @@ fn main() -> anyhow::Result<()> {
             "Enter Insert Mode",
             Rc::new(|s| {
                 s.get::<&mut InputState>().set_mode("insert");
+
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+                buf.commit_change();
+
                 Ok(())
             }),
+        )?;
+
+        bind_movement(
+            normal,
+            CursorOptions::new().extend(true).wrap(true),
+            "shift-left",
+            "shift-right",
+            "shift-up",
+            "shift-down",
         )?;
 
         normal.bind(
@@ -267,6 +287,16 @@ fn main() -> anyhow::Result<()> {
         .get::<&mut Pipeline>()
         .highlighters
         .push(CursorHighlighter);
+
+    editor
+        .get::<&mut Pipeline>()
+        .highlighters
+        .push(ConstantHighlighter);
+
+    editor
+        .get::<&mut Pipeline>()
+        .renderers
+        .push(HelloWorldRenderer);
 
     // Run the actual editor
     editor.run();
