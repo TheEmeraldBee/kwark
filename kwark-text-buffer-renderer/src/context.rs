@@ -8,4 +8,5 @@ pub struct LineCtx<'a> {
     pub text: RopeSlice<'a>,
     pub width: u16,
     pub cursors: &'a [Cursor],
+    pub primary: usize,
 }

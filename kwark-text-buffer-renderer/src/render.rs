@@ -1,10 +1,9 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span as RSpan};
 use ratatui::widgets::Widget;
 
-use crate::{Highlight, LineCtx, StyleSpan};
+use crate::{Highlight, LineCtx};
 
 /// Takes in highlights, and allows for custom rendering of text
 pub trait Renderer<S> {
@@ -71,46 +70,48 @@ impl<S> Renderers<S> {
 fn render_plain(ctx: &LineCtx, hl: &Highlight, area: Rect, buf: &mut Buffer) {
     let len = ctx.text.len_chars();
 
-    let mut ordered: Vec<&StyleSpan> = hl.spans.iter().collect();
-    ordered.sort_by_key(|span| span.range.start);
+    // An empty line still draws one space so the caret can show on it
+    if len == 0 {
+        let spans = vec![RSpan::styled(" ".to_owned(), hl.style_at(0))];
 
-    let mut spans = Vec::new();
-    let mut cursor = 0;
-
-    for span in ordered {
-        let start = span.range.start.min(len);
-        let end = span.range.end.min(len).max(start);
-
-        if start > cursor {
-            spans.push(plain_span(ctx, cursor..start));
-        }
-
-        if end > start {
-            spans.push(RSpan::styled(
-                ctx.text.slice(start..end).to_string().replace("\n", " "),
-                span.style,
-            ));
-        }
-
-        cursor = cursor.max(end);
+        Line::from(spans).render(area, buf);
+        return;
     }
 
-    if cursor < len {
-        spans.push(plain_span(ctx, cursor..len));
+    let mut points: Vec<usize> = hl
+        .spans
+        .iter()
+        .flat_map(|span| [span.range.start, span.range.end])
+        .collect();
+
+    points.push(0);
+    points.push(len);
+    points.retain(|&p| p <= len);
+    points.sort_unstable();
+    points.dedup();
+
+    let mut spans = Vec::new();
+
+    for pair in points.windows(2) {
+        let (start, end) = (pair[0], pair[1]);
+        if end <= start {
+            continue;
+        }
+
+        let text = ctx.text.slice(start..end).to_string().replace("\n", " ");
+        spans.push(RSpan::styled(text, hl.style_at(start)));
     }
 
     Line::from(spans).render(area, buf);
 }
 
-fn plain_span<'a>(ctx: &LineCtx, range: std::ops::Range<usize>) -> RSpan<'a> {
-    RSpan::styled(ctx.text.slice(range).to_string(), Style::default())
-}
-
 #[cfg(test)]
 mod test {
+    use ratatui::style::Style;
     use ropey::Rope;
 
     use super::*;
+    use crate::StyleSpan;
 
     fn ctx(rope: &Rope) -> LineCtx<'_> {
         LineCtx {
@@ -119,6 +120,7 @@ mod test {
             text: rope.line(0),
             width: 80,
             cursors: &[],
+            primary: 0,
         }
     }
 
@@ -186,5 +188,31 @@ mod test {
         assert_eq!(buf[(0, 0)].style().fg, Some(ratatui::style::Color::Red));
         assert_eq!(buf[(2, 0)].symbol(), "l");
         assert_eq!(buf[(2, 0)].style().fg, Some(ratatui::style::Color::Reset));
+    }
+
+    #[test]
+    fn overlapping_spans_patch_in_order() {
+        let rope = Rope::from_str("hello");
+        let line_ctx = ctx(&rope);
+        let hl = Highlight::plain(vec![
+            StyleSpan {
+                range: 0..5,
+                style: Style::new().fg(ratatui::style::Color::Red),
+            },
+            StyleSpan {
+                range: 1..3,
+                style: Style::new().fg(ratatui::style::Color::Blue),
+            },
+        ]);
+
+        let area = Rect::new(0, 0, 5, 1);
+        let mut buf = Buffer::empty(area);
+
+        render_plain(&line_ctx, &hl, area, &mut buf);
+
+        assert_eq!(buf[(0, 0)].style().fg, Some(ratatui::style::Color::Red));
+        assert_eq!(buf[(1, 0)].style().fg, Some(ratatui::style::Color::Blue));
+        assert_eq!(buf[(2, 0)].style().fg, Some(ratatui::style::Color::Blue));
+        assert_eq!(buf[(3, 0)].style().fg, Some(ratatui::style::Color::Red));
     }
 }

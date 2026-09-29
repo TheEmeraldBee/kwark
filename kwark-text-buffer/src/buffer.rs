@@ -162,10 +162,16 @@ impl Buffer {
         lines
     }
 
-    /// Clamp a character position into the length of the buffer
+    /// Clamp a character position into the buffer
+    ///
+    /// The end of the buffer is valid when the final line is empty
     pub fn clamp(&self, mut chr: usize) -> usize {
-        if chr >= self.rope.len_chars() {
-            chr = self.rope.len_chars() - 1;
+        let len = self.rope.len_chars();
+
+        if self.rope.line(self.rope.len_lines() - 1).len_chars() == 0 {
+            chr = chr.min(len);
+        } else {
+            chr = chr.min(len.saturating_sub(1));
         }
 
         chr
@@ -189,9 +195,15 @@ impl Buffer {
         }
 
         let line_char = self.rope.line_to_char(line);
+        let line_len = self.rope.line(line).len_chars();
 
-        if col >= self.rope.line(line).len_chars() {
-            col = self.rope.line(line).len_chars() - 1;
+        // A 0-length line has no characters, so rest at its start
+        if line_len == 0 {
+            return line_char;
+        }
+
+        if col >= line_len {
+            col = line_len - 1;
         }
 
         line_char + col
@@ -285,6 +297,37 @@ pub mod test {
 
         buf.redo();
         assert_eq!(buf.rope().to_string(), "hellohello".to_string());
+    }
+
+    #[test]
+    pub fn test_zero_length_lines() {
+        let mut buf = Buffer::default();
+
+        buf.insert(0, 0, "abc\n").unwrap();
+
+        // The trailing line after the newline is 0-length
+        assert_eq!(buf.rope().len_lines(), 2);
+        assert_eq!(buf.rope().line(1).len_chars(), 0);
+
+        // The end of the buffer rests on the empty final line
+        assert_eq!(buf.line_col_to_char(1, 0), 4);
+        assert_eq!(buf.line_col_to_char(1, 5), 4);
+        assert_eq!(buf.char_to_line_col(4), (1, 0));
+        assert_eq!(buf.clamp(10), 4);
+    }
+
+    #[test]
+    pub fn test_empty_buffer() {
+        let mut buf = Buffer::default();
+
+        assert_eq!(buf.clamp(0), 0);
+        assert_eq!(buf.clamp(10), 0);
+        assert_eq!(buf.char_to_line_col(0), (0, 0));
+        assert_eq!(buf.line_col_to_char(0, 0), 0);
+        assert_eq!(buf.line_col_to_char(5, 5), 0);
+
+        buf.insert(0, 0, "hi").unwrap();
+        assert_eq!(buf.rope().to_string(), "hi");
     }
 
     #[test]

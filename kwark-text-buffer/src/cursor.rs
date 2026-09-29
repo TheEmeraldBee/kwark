@@ -32,15 +32,45 @@ impl CursorOptions {
         self
     }
 
+    /// Returns whether the cursor will extend selections
+    pub fn is_extend(&self) -> bool {
+        self.extend
+    }
+
     /// Sets whether, when the cursor's column goes past the end of line, to move it to the beginning of the next line or not
     pub fn wrap(mut self, wrap: bool) -> Self {
         self.wrap = wrap;
         self
     }
 
+    /// Returns whether the cursor will wrap between lines
+    pub fn is_wrap(&self) -> bool {
+        self.wrap
+    }
+
     /// Sets whether or not to apply this to all cursors in the set
     pub fn all(mut self, all: bool) -> Self {
         self.all = all;
+        self
+    }
+
+    /// Returns whether the action will apply to all cursors in the set
+    pub fn is_all(&self) -> bool {
+        self.all
+    }
+
+    /// Joins two cursor sets together
+    pub fn join(mut self, other: CursorOptions) -> Self {
+        if other.all {
+            self.all = true;
+        }
+        if other.extend {
+            self.extend = true
+        }
+        if other.wrap {
+            self.wrap = true
+        }
+
         self
     }
 }
@@ -123,6 +153,12 @@ impl CursorSet {
         self.redo_stack.clear();
     }
 
+    /// Changes the primary cursor, wrapping at each end
+    pub fn change_primary(&mut self, dist: isize) {
+        self.primary =
+            (self.primary as isize + dist).rem_euclid(self.cursors.len() as isize) as usize;
+    }
+
     /// Pops from the undo-stack and restores the cursors to their state before that edit
     ///
     /// Does nothing if stack is empty
@@ -156,6 +192,11 @@ impl CursorSet {
 
     pub fn cursors(&self) -> &[Cursor] {
         &self.cursors
+    }
+
+    /// Returns the index of the primary cursor
+    pub fn primary(&self) -> usize {
+        self.primary
     }
 
     /// Applies the function depending on the cursor options
@@ -215,16 +256,22 @@ impl CursorSet {
             let len_lines = buf.rope().len_lines();
 
             let target_line = (line as isize + lines).clamp(0, len_lines as isize - 1) as usize;
-            let line_len = buf.rope().line(target_line).len_chars().max(1);
+            let line_chars = buf.rope().line(target_line).len_chars();
+            let line_len = line_chars.max(1);
 
-            let mut desired_col = cursor.desired_col;
+            // A 0-length line has no columns, so rest at the end of the file with col 0
+            let mut desired_col = if line_chars == 0 {
+                0
+            } else {
+                cursor.desired_col
+            };
             let display_col = desired_col.min(line_len - 1);
 
             let caret = buf.line_col_to_char(target_line, display_col);
 
             let caret = if columns != 0 {
                 if options.wrap {
-                    let last = buf.rope().len_chars().saturating_sub(1);
+                    let last = buf.rope().len_chars();
                     let shifted = (caret as isize + columns).clamp(0, last as isize) as usize;
                     desired_col = buf.char_to_line_col(shifted).1;
                     shifted
@@ -264,7 +311,7 @@ impl CursorSet {
             primary.anchor = buf.line_col_to_char(line, col);
         }
 
-        primary.desired_col = col;
+        primary.desired_col = buf.char_to_line_col(primary.caret).1;
 
         self.merge();
     }
@@ -274,6 +321,7 @@ impl CursorSet {
         let primary = self.cursors.remove(self.primary);
         self.cursors.clear();
         self.cursors.push(primary);
+        self.primary = 0;
     }
 
     /// Deletes the primary cursor
@@ -303,7 +351,7 @@ impl CursorSet {
             set.move_after(buf, idx, len as isize);
 
             let cursor = &mut set.cursors[idx];
-            cursor.caret += len;
+            cursor.caret = buf.clamp(cursor.caret + len);
 
             if !options.extend {
                 cursor.anchor = cursor.caret;
@@ -394,6 +442,13 @@ impl CursorSet {
         self.cursors = merged;
     }
 
+    /// Duplicates the primary selection, setting the primary to the new cursor
+    pub fn duplicate(&mut self) {
+        let cloned = self.cursors[self.primary].clone();
+        self.cursors.push(cloned);
+        self.primary = self.cursors.len() - 1;
+    }
+
     /// Moves all cursors a distance (negative or positive) that exist after the cursor. This allows for things like auto-moving on insert/delete
     fn move_after(&mut self, buffer: &Buffer, cursor: usize, distance: isize) {
         let pivot = self.cursors[cursor].caret;
@@ -415,6 +470,60 @@ impl CursorSet {
 
     pub fn bind<'a>(&'a mut self, buf: &'a mut Buffer) -> BoundCursorSet<'a> {
         BoundCursorSet { set: self, buf }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn setup(text: &str) -> (Buffer, CursorSet) {
+        let mut buf = Buffer::default();
+
+        buf.insert(0, 0, text).unwrap();
+        buf.commit_change();
+
+        (buf, CursorSet::default())
+    }
+
+    #[test]
+    fn move_to_bottom_rests_on_empty_line() {
+        let (buf, mut set) = setup("aaaa\nbbbb\ncccc\n");
+        let opts = CursorOptions::default().wrap(true);
+
+        // Move out to col 2, then down onto the empty final line
+        set.move_(&buf, 0, 2, &opts);
+        set.move_(&buf, 1, 0, &opts);
+        set.move_(&buf, 1, 0, &opts);
+        set.move_(&buf, 1, 0, &opts);
+
+        // The caret rests at the end of the buffer, on the empty final line
+        assert_eq!(set.cursors()[0].caret(), 15);
+        assert_eq!(buf.char_to_line_col(set.cursors()[0].caret()), (3, 0));
+
+        // Moving down again stays at the end of the buffer
+        set.move_(&buf, 1, 0, &opts);
+        assert_eq!(set.cursors()[0].caret(), 15);
+
+        // The desired col reset to 0, so moving back up lands at col 0
+        set.move_(&buf, -1, 0, &opts);
+        assert_eq!(buf.char_to_line_col(set.cursors()[0].caret()), (2, 0));
+    }
+
+    #[test]
+    fn insert_at_bottom_types_onto_empty_line() {
+        let (mut buf, mut set) = setup("aaaa\nbbbb\ncccc\n");
+        let opts = CursorOptions::default().wrap(true);
+
+        set.move_(&buf, 3, 0, &opts);
+
+        assert_eq!(set.cursors()[0].caret(), 15);
+
+        set.insert(&mut buf, "ab", &opts);
+
+        assert_eq!(buf.rope().to_string(), "aaaa\nbbbb\ncccc\nab");
+        assert_eq!(set.cursors()[0].caret(), 16);
+        assert_eq!(buf.char_to_line_col(set.cursors()[0].caret()), (3, 1));
     }
 }
 
@@ -449,6 +558,11 @@ impl<'a> BoundCursorSet<'a> {
         self.set.set(self.buf, line, col, options);
     }
 
+    /// Changes the primary cursor, wrapping at each end
+    pub fn change_primary(&mut self, dist: isize) {
+        self.set.change_primary(dist);
+    }
+
     /// Deletes all cursors other than the primary
     pub fn remove_other(&mut self) {
         self.set.remove_other();
@@ -474,6 +588,11 @@ impl<'a> BoundCursorSet<'a> {
     /// Swaps the head and tail (anchor and caret) of the cursor
     pub fn swap(&mut self, options: &CursorOptions) {
         self.set.swap(options);
+    }
+
+    /// Duplicates the primary cursor, and sets the primary cursor to the new one
+    pub fn duplicate(&mut self) {
+        self.set.duplicate();
     }
 
     /// Commits current change on buffer, as well as storing the cursors in the undo stack

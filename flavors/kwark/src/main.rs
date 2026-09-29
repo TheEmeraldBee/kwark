@@ -23,13 +23,15 @@ fn create_move_cursor(
     options: CursorOptions,
 ) -> Rc<dyn Fn(&mut State) -> anyhow::Result<()>> {
     return Rc::new(move |s: &mut State| {
-        let bufs = s.get::<&mut buffer::Storage>();
+        let (bufs, opts) = s.get::<(&mut buffer::Storage, &CursorOptions)>();
+
+        let opts = opts.join(options);
 
         let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
             return Ok(());
         };
 
-        buf.move_(lines, columns, &options);
+        buf.move_(lines, columns, &opts);
 
         Ok(())
     });
@@ -57,6 +59,8 @@ fn bind_movement(
 fn main() -> anyhow::Result<()> {
     // Initialize the editor
     let mut editor = kwark::init();
+
+    editor.insert(CursorOptions::new());
 
     // Retrieve the input state from the editor
     let input = editor.get::<&mut InputState>();
@@ -141,6 +145,99 @@ fn main() -> anyhow::Result<()> {
             }),
         )?;
 
+        normal.bind(
+            &["c"],
+            "Toggle All-Cursor Mode",
+            Rc::new(|s| {
+                let options = s.get::<&mut CursorOptions>();
+
+                *options = options.all(!options.is_all());
+
+                Ok(())
+            }),
+        )?;
+
+        normal.bind(
+            &["d"],
+            "Delete Selection",
+            Rc::new(|s| {
+                let (bufs, opts) = s.get::<(&mut buffer::Storage, &CursorOptions)>();
+
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.move_(0, 1, &opts.extend(true).wrap(true));
+
+                buf.delete(&opts);
+
+                buf.commit_change();
+
+                Ok(())
+            }),
+        )?;
+
+        normal.bind(
+            &["C"],
+            "Create new cursor below",
+            Rc::new(|s| {
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.duplicate();
+                buf.move_(1, 0, &CursorOptions::new());
+
+                Ok(())
+            }),
+        )?;
+
+        normal.bind(
+            &[","],
+            "Delete other cursors",
+            Rc::new(|s| {
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.remove_other();
+
+                Ok(())
+            }),
+        )?;
+
+        normal.bind(
+            &["["],
+            "Change Cursor Up",
+            Rc::new(|s| {
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.change_primary(-1);
+
+                Ok(())
+            }),
+        )?;
+
+        normal.bind(
+            &["]"],
+            "Change Cursor Down",
+            Rc::new(|s| {
+                let bufs = s.get::<&mut buffer::Storage>();
+                let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
+                    return Ok(());
+                };
+
+                buf.change_primary(1);
+
+                Ok(())
+            }),
+        )?;
+
         bind_movement(
             normal,
             CursorOptions::new().extend(true).wrap(true),
@@ -148,6 +245,15 @@ fn main() -> anyhow::Result<()> {
             "shift-right",
             "shift-up",
             "shift-down",
+        )?;
+
+        bind_movement(
+            normal,
+            CursorOptions::new().extend(true).wrap(true),
+            "H",
+            "L",
+            "K",
+            "J",
         )?;
 
         normal.bind(
@@ -189,14 +295,14 @@ fn main() -> anyhow::Result<()> {
             &["backspace"],
             "Delete Char",
             Rc::new(|s| {
-                let bufs = s.get::<&mut buffer::Storage>();
+                let (bufs, opts) = s.get::<(&mut buffer::Storage, &CursorOptions)>();
 
                 let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
                     return Ok(());
                 };
 
-                buf.move_(0, -1, &CursorOptions::new().extend(true).wrap(true));
-                buf.delete(&CursorOptions::new());
+                buf.move_(0, -1, &opts.wrap(true).extend(true));
+                buf.delete(&opts);
 
                 Ok(())
             }),
@@ -206,13 +312,13 @@ fn main() -> anyhow::Result<()> {
             &["enter"],
             "Insert Newline",
             Rc::new(|s| {
-                let bufs = s.get::<&mut buffer::Storage>();
+                let (bufs, opts) = s.get::<(&mut buffer::Storage, &CursorOptions)>();
 
                 let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
                     return Ok(());
                 };
 
-                buf.insert("\n", &CursorOptions::default());
+                buf.insert("\n", opts);
 
                 Ok(())
             }),
@@ -222,13 +328,13 @@ fn main() -> anyhow::Result<()> {
             &["space"],
             "Insert Space",
             Rc::new(|s| {
-                let bufs = s.get::<&mut buffer::Storage>();
+                let (bufs, opts) = s.get::<(&mut buffer::Storage, &CursorOptions)>();
 
                 let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
                     return Ok(());
                 };
 
-                buf.insert(" ", &text_buffer::CursorOptions::default());
+                buf.insert(" ", &opts);
 
                 Ok(())
             }),
@@ -236,7 +342,7 @@ fn main() -> anyhow::Result<()> {
 
         insert.set_backup(
             |s, chord| {
-                let bufs = s.get::<&mut buffer::Storage>();
+                let (bufs, opts) = s.get::<(&mut buffer::Storage, &CursorOptions)>();
 
                 let Some(mut buf) = bufs.iter_mut().next().and_then(|x| x.1.as_text()) else {
                     return Ok(());
@@ -255,7 +361,7 @@ fn main() -> anyhow::Result<()> {
                     _ => return Ok(()),
                 };
 
-                buf.insert(key_string.as_str(), &CursorOptions::default());
+                buf.insert(key_string.as_str(), &opts);
 
                 Ok(())
             },
@@ -274,12 +380,12 @@ fn main() -> anyhow::Result<()> {
     editor
         .get::<&mut Pipeline>()
         .highlighters
-        .push(CursorHighlighter);
+        .push(ConstantHighlighter);
 
     editor
         .get::<&mut Pipeline>()
         .highlighters
-        .push(ConstantHighlighter);
+        .push(CursorHighlighter);
 
     editor
         .get::<&mut Pipeline>()

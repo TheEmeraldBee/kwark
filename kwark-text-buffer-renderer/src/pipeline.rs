@@ -28,6 +28,7 @@ impl<S> Pipeline<S> {
         state: &mut S,
         scroll_top: usize,
         cursors: &[Cursor],
+        primary: usize,
         area: Rect,
         buf: &mut Buffer,
     ) {
@@ -42,6 +43,7 @@ impl<S> Pipeline<S> {
                 text: rope.line(line),
                 width: area.width,
                 cursors,
+                primary,
             };
 
             let hl = self.highlighters.resolve(state, &ctx);
@@ -81,7 +83,7 @@ mod test {
         let area = Rect::new(0, 0, 5, 2);
         let mut buf = Buffer::empty(area);
 
-        Pipeline::default().render(&rope, &mut (), 0, &[], area, &mut buf);
+        Pipeline::default().render(&rope, &mut (), 0, &[], 0, area, &mut buf);
 
         assert_eq!(buf[(0, 0)].symbol(), "h");
         assert_eq!(buf[(0, 1)].symbol(), "w");
@@ -93,7 +95,7 @@ mod test {
         let area = Rect::new(0, 0, 1, 2);
         let mut buf = Buffer::empty(area);
 
-        Pipeline::default().render(&rope, &mut (), 0, &[], area, &mut buf);
+        Pipeline::default().render(&rope, &mut (), 0, &[], 0, area, &mut buf);
 
         assert_eq!(buf[(0, 0)].symbol(), "a");
         assert_eq!(buf[(0, 1)].symbol(), "b");

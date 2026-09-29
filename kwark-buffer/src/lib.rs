@@ -37,11 +37,13 @@ impl Buffer {
         match self {
             Self::Text { buf, cursors, .. } => {
                 let carets = cursors.cursors();
+                let primary = cursors.primary();
                 pipeline.render(
                     buf.buffer.rope(),
                     state,
                     0,
                     carets,
+                    primary,
                     rect,
                     frame.buffer_mut(),
                 );
