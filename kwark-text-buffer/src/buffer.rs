@@ -1,3 +1,5 @@
+pub use kwark_tree_sitter::position::Edit;
+
 use crate::*;
 
 /// A general text-buffer implementation that handles
@@ -8,6 +10,9 @@ pub struct Buffer {
 
     pub(crate) version: u128,
 
+    /// Every Edit applied so far
+    edit_log: Vec<Edit>,
+
     change: OpSet,
 
     undo_stack: Vec<OpSet>,
@@ -15,15 +20,37 @@ pub struct Buffer {
 }
 
 impl Buffer {
+    /// Applies `op`, logging the Edit it produced
+    fn log_apply(&mut self, op: &Operation) -> Result<()> {
+        let edit = op.apply(self)?;
+        self.edit_log.push(edit);
+        Ok(())
+    }
+
     fn apply_op(&mut self, op: Operation) -> Result<()> {
         let inverse = op.inverse(self)?;
 
-        op.apply(self)?;
+        self.log_apply(&op)?;
 
         self.redo_stack.clear();
         self.change.0.push(inverse);
 
         Ok(())
+    }
+
+    /// Every Edit applied since `version`, oldest first
+    ///
+    /// # Errors
+    /// Returns [`Error::OutdatedVersion`] if `version` is newer than the buffer's current version
+    pub fn edits_since(&self, version: u128) -> Result<&[Edit]> {
+        if version > self.version {
+            return Err(Error::OutdatedVersion);
+        }
+
+        // edit_log always holds one entry per committed version
+        let start = usize::try_from(version).map_err(|_| Error::OutdatedVersion)?;
+
+        Ok(&self.edit_log[start..])
     }
 
     /// Inserts text at the given line and col (0-indexed char indices)
@@ -74,7 +101,7 @@ impl Buffer {
         for op in ops.0.into_iter().rev() {
             let inverse = op.inverse(self).expect("Undo SHOULD be appliable");
 
-            op.apply(self).expect("Undo SHOULD be appliable");
+            self.log_apply(&op).expect("Undo SHOULD be appliable");
 
             redo.0.push(inverse);
         }
@@ -95,7 +122,7 @@ impl Buffer {
         for op in ops.0.into_iter().rev() {
             let inverse = op.inverse(self).expect("Redo SHOULD be appliable");
 
-            op.apply(self).expect("Redo SHOULD be appliable");
+            self.log_apply(&op).expect("Redo SHOULD be appliable");
 
             undo.0.push(inverse);
         }
@@ -345,5 +372,65 @@ pub mod test {
 
         buf.redo();
         assert_eq!(buf.rope().to_string(), "hello, world");
+    }
+
+    #[test]
+    pub fn edits_since_returns_edits_in_order() {
+        let mut buf = Buffer::default();
+
+        buf.insert(0, 0, "hello").unwrap();
+        buf.insert(0, 5, ", world").unwrap();
+        buf.delete(0, 0, 1).unwrap();
+
+        let edits = buf.edits_since(0).unwrap();
+        assert_eq!(edits.len(), 3);
+
+        // Replaying the logged edits should match a fresh parse
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_json::LANGUAGE.into())
+            .unwrap();
+
+        let mut tree = parser.parse("", None).unwrap();
+        for edit in edits {
+            tree.edit(&edit.as_input_edit());
+        }
+
+        let final_text = buf.rope().to_string();
+        let reparsed = parser.parse(&final_text, Some(&tree)).unwrap();
+        let fresh = parser.parse(&final_text, None).unwrap();
+
+        assert_eq!(reparsed.root_node().to_sexp(), fresh.root_node().to_sexp());
+    }
+
+    #[test]
+    pub fn undo_is_logged_as_its_own_edit() {
+        let mut buf = Buffer::default();
+
+        buf.insert(0, 0, "hello").unwrap();
+        buf.commit_change();
+        assert_eq!(buf.version(), 1);
+
+        buf.undo();
+        assert_eq!(buf.version(), 2);
+        assert_eq!(buf.rope().to_string(), "");
+
+        let edits = buf.edits_since(0).unwrap();
+        assert_eq!(edits.len(), 2, "the insert and its undo are both logged");
+        assert_eq!(
+            edits[1].new_end_byte, edits[1].start_byte,
+            "undo deletes back to the start"
+        );
+    }
+
+    #[test]
+    pub fn edits_since_a_future_version_is_an_error() {
+        let mut buf = Buffer::default();
+        buf.insert(0, 0, "hi").unwrap();
+
+        assert!(matches!(
+            buf.edits_since(buf.version() + 1),
+            Err(Error::OutdatedVersion)
+        ));
     }
 }

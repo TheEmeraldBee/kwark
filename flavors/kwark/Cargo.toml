@@ -13,5 +13,5 @@ kwark = { version = "0.0.0", path = "../../kwark" }
 anyhow.workspace = true
 ratatui.workspace = true
 
-[dev-dependencies]
-ropey = "1.6.1"
+# Tree Sitter languages
+tree-sitter-rust = "0.24.2"

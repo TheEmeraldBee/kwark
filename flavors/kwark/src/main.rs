@@ -1,12 +1,14 @@
-use std::rc::Rc;
+use std::{path::PathBuf, rc::Rc};
 
-use kwark::prelude::text_buffer::{BufferEntry, CursorOptions, CursorSet};
 pub use kwark::prelude::*;
+use kwark::prelude::{
+    text_buffer::{BufferEntry, CursorOptions, CursorSet},
+    tree_sitter::LanguageStore,
+};
 
-mod highlighter;
-use highlighter::CursorHighlighter;
-
-use crate::highlighter::{ConstantHighlighter, HelloWorldRenderer};
+mod highlighters;
+mod theme;
+use highlighters::*;
 
 fn commit_changes(state: &mut State) {
     let bufs = state.get::<&mut buffer::Storage>();
@@ -60,6 +62,19 @@ fn main() -> anyhow::Result<()> {
     // Initialize the editor
     let mut editor = kwark::init();
 
+    let filepath = PathBuf::from(
+        std::env::args()
+            .skip(1)
+            .next()
+            .unwrap_or("./src/main.rs".to_string()),
+    );
+
+    if !filepath.exists() {
+        println!("Filepath '{}' doesn't exist", filepath.to_string_lossy());
+        return Ok(());
+    }
+
+    editor.insert(LanguageStore::new("./queries".into())?);
     editor.insert(CursorOptions::new());
 
     // Retrieve the input state from the editor
@@ -369,28 +384,37 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
+    let path = filepath;
+    let buf = BufferEntry::new_file(path.clone())?;
+    let cursors = CursorSet::default();
+
+    let store = editor.get::<&mut tree_sitter::LanguageStore>();
+    store.register(
+        "rust",
+        tree_sitter::Language::new(tree_sitter_rust::LANGUAGE),
+    )?;
+
+    let tree = tree_sitter::SyntaxTree::parse(store, "rust", buf.buffer.rope())?;
+
     editor
         .get::<&mut buffer::Storage>()
         .insert(buffer::Buffer::Text {
-            path: "./Cargo.toml".into(),
-            buf: BufferEntry::new_file("./Cargo.toml".into())?,
-            cursors: CursorSet::default(),
+            path,
+            buf,
+            cursors,
+            tree: Some(tree),
+            parsed_version: 0,
         });
 
     editor
         .get::<&mut Pipeline>()
         .highlighters
-        .push(ConstantHighlighter);
+        .push(TSHighlighter);
 
     editor
         .get::<&mut Pipeline>()
         .highlighters
         .push(CursorHighlighter);
-
-    editor
-        .get::<&mut Pipeline>()
-        .renderers
-        .push(HelloWorldRenderer);
 
     // Run the actual editor
     editor.run();

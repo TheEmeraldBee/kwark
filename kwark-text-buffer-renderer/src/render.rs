@@ -121,6 +121,7 @@ mod test {
             width: 80,
             cursors: &[],
             primary: 0,
+            tree: None,
         }
     }
 

@@ -2,6 +2,18 @@ use std::{collections::HashMap, path::PathBuf};
 
 use kwark_text_buffer::{self as text, BoundCursorSet};
 use kwark_text_buffer_renderer::Pipeline;
+use kwark_tree_sitter::prelude::*;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Buffer(#[from] kwark_text_buffer::Error),
+
+    #[error(transparent)]
+    TreeSitter(#[from] kwark_tree_sitter::error::Error),
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
 
 /// Some kind of text that can be rendered/used as a buffer
 pub enum Buffer {
@@ -9,6 +21,11 @@ pub enum Buffer {
         path: PathBuf,
         buf: text::BufferEntry,
         cursors: text::CursorSet,
+
+        tree: Option<SyntaxTree>,
+
+        /// The buffer version the tree was last parsed at
+        parsed_version: u128,
     },
     Widget(ratatui::buffer::Buffer),
 }
@@ -26,6 +43,35 @@ impl Buffer {
         }
     }
 
+    /// Reparses the tree if the buffer's text has changed since the last parse
+    pub fn update(&mut self, store: &mut LanguageStore) -> Result<()> {
+        match self {
+            Self::Text {
+                buf,
+                tree,
+                parsed_version,
+                ..
+            } => {
+                let Some(tree) = tree else {
+                    return Ok(());
+                };
+
+                let version = buf.buffer.version();
+                if *parsed_version == version {
+                    return Ok(());
+                }
+
+                let edits = buf.buffer.edits_since(*parsed_version)?;
+                tree.reparse(store, edits, buf.buffer.rope())?;
+                *parsed_version = version;
+
+                Ok(())
+            }
+
+            Self::Widget(_) => Ok(()),
+        }
+    }
+
     /// Given the window, an area, and a pipeline, render the widget to that location
     pub fn render<S>(
         &self,
@@ -35,7 +81,9 @@ impl Buffer {
         rect: ratatui::layout::Rect,
     ) {
         match self {
-            Self::Text { buf, cursors, .. } => {
+            Self::Text {
+                buf, cursors, tree, ..
+            } => {
                 let carets = cursors.cursors();
                 let primary = cursors.primary();
                 pipeline.render(
@@ -44,6 +92,7 @@ impl Buffer {
                     0,
                     carets,
                     primary,
+                    tree.as_ref(),
                     rect,
                     frame.buffer_mut(),
                 );
@@ -141,6 +190,15 @@ impl Storage {
     /// Checks if the ID exists within the storage
     pub fn has(&self, id: &ID) -> bool {
         self.inner.contains_key(id)
+    }
+
+    /// Updates every buffer, reparsing trees whose version has changed
+    pub fn update_all(&mut self, store: &mut LanguageStore) -> Result<()> {
+        for buf in self.inner.values_mut() {
+            buf.update(store)?;
+        }
+
+        Ok(())
     }
 }
 

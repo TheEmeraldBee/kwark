@@ -6,6 +6,7 @@ pub use kwark_input::{Chord, Step};
 pub type InputState = kwark_input::InputState<State>;
 pub type InputTree = kwark_input::InputTree<State>;
 
+use kwark_theme::Theme;
 use ratatui::{
     macros::{horizontal, vertical},
     prelude::*,
@@ -25,6 +26,9 @@ pub mod prelude {
     pub use kwark_buffer as buffer;
     pub use kwark_text_buffer as text_buffer;
     pub use kwark_text_buffer_renderer as text_render;
+    pub use kwark_theme::Theme;
+
+    pub use kwark_tree_sitter::prelude as tree_sitter;
 
     pub use crate::Pipeline;
 }
@@ -58,6 +62,7 @@ impl Editor {
         self.state.insert(Pipeline::default());
         self.state.insert(InputState::new("normal"));
         self.state.insert(Running(true));
+        self.state.insert(Theme::default());
     }
 
     pub fn run(mut self) {
@@ -114,6 +119,15 @@ impl Editor {
             }
 
             self.flush()?;
+
+            {
+                let (bufs, store) = self.state.get::<(
+                    &mut buffer::Storage,
+                    &mut kwark_tree_sitter::store::LanguageStore,
+                )>();
+
+                bufs.update_all(store)?;
+            }
 
             // TODO: The Window:
             // TODO: The window is made up of 3 major parts

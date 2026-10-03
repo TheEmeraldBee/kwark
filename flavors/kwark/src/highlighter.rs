@@ -69,7 +69,8 @@ impl Highlighter<State> for ConstantHighlighter {
     fn highlight(&mut self, _state: &mut State, ctx: &LineCtx) -> Option<Highlight> {
         let span = StyleSpan {
             range: 0..ctx.text.len_chars(),
-            style: Style::default().fg(ratatui::style::Color::Rgb(201, 140, 176)),
+            // style: Style::default().fg(ratatui::style::Color::Rgb(201, 140, 176)),
+            style: Style::new().fg(Color::Gray),
         };
 
         Some(Highlight::plain(vec![span]))

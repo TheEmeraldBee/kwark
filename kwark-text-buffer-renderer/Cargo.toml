@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 kwark-text-buffer.workspace = true
+kwark-tree-sitter.workspace = true
 
 ratatui.workspace = true
 ropey = "1.6.1"

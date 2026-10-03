@@ -7,5 +7,7 @@ license.workspace = true
 [dependencies]
 kwark-text-buffer.workspace = true
 kwark-text-buffer-renderer.workspace = true
+kwark-tree-sitter.workspace = true
 
 ratatui.workspace = true
+thiserror.workspace = true

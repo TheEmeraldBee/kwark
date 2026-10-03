@@ -8,6 +8,8 @@ license.workspace = true
 kwark-text-buffer.workspace = true
 kwark-text-buffer-renderer.workspace = true
 kwark-buffer.workspace = true
+kwark-tree-sitter.workspace = true
+kwark-theme.workspace = true
 
 kwark-input.workspace = true
 

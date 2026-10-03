@@ -1,4 +1,5 @@
 use kwark_text_buffer::Cursor;
+use kwark_tree_sitter::tree::SyntaxTree;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ropey::Rope;
@@ -29,6 +30,7 @@ impl<S> Pipeline<S> {
         scroll_top: usize,
         cursors: &[Cursor],
         primary: usize,
+        tree: Option<&SyntaxTree>,
         area: Rect,
         buf: &mut Buffer,
     ) {
@@ -44,6 +46,7 @@ impl<S> Pipeline<S> {
                 width: area.width,
                 cursors,
                 primary,
+                tree,
             };
 
             let hl = self.highlighters.resolve(state, &ctx);
@@ -83,7 +86,7 @@ mod test {
         let area = Rect::new(0, 0, 5, 2);
         let mut buf = Buffer::empty(area);
 
-        Pipeline::default().render(&rope, &mut (), 0, &[], 0, area, &mut buf);
+        Pipeline::default().render(&rope, &mut (), 0, &[], 0, None, area, &mut buf);
 
         assert_eq!(buf[(0, 0)].symbol(), "h");
         assert_eq!(buf[(0, 1)].symbol(), "w");
@@ -95,7 +98,7 @@ mod test {
         let area = Rect::new(0, 0, 1, 2);
         let mut buf = Buffer::empty(area);
 
-        Pipeline::default().render(&rope, &mut (), 0, &[], 0, area, &mut buf);
+        Pipeline::default().render(&rope, &mut (), 0, &[], 0, None, area, &mut buf);
 
         assert_eq!(buf[(0, 0)].symbol(), "a");
         assert_eq!(buf[(0, 1)].symbol(), "b");
