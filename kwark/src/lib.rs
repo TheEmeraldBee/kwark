@@ -1,6 +1,9 @@
 use std::{io::stdout, time::Duration};
 
-use crossterm::event;
+use crossterm::{
+    event,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+};
 pub use kwark_input::{Chord, Step};
 
 pub type InputState = kwark_input::InputState<State>;
@@ -10,7 +13,7 @@ use kwark_theme::Theme;
 use ratatui::{
     macros::{horizontal, vertical},
     prelude::*,
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 
 pub mod prelude {
@@ -31,6 +34,10 @@ pub mod prelude {
     pub use kwark_tree_sitter::prelude as tree_sitter;
 
     pub use crate::Pipeline;
+
+    pub use crate::layout::{LeafId, Window, WindowLayout};
+
+    pub use crate::replace as replace_term;
 }
 
 use kwark_buffer as buffer;
@@ -41,6 +48,8 @@ mod state;
 pub use state::*;
 
 pub mod events;
+
+pub mod layout;
 
 pub struct Running(pub bool);
 
@@ -56,6 +65,42 @@ pub fn init() -> Editor {
     editor
 }
 
+/// Run a function, replacing the terminal with this
+///
+/// Then auto-restore the window
+pub fn replace<R>(
+    mut sender: CallbackSender,
+    func: impl FnOnce() -> anyhow::Result<R>,
+) -> anyhow::Result<R> {
+    crossterm::execute!(
+        stdout(),
+        event::PopKeyboardEnhancementFlags,
+        event::DisableBracketedPaste,
+        LeaveAlternateScreen,
+    )
+    .unwrap();
+
+    let res = func();
+
+    crossterm::execute!(
+        stdout(),
+        event::PushKeyboardEnhancementFlags(
+            event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        ),
+        event::EnableBracketedPaste,
+        EnterAlternateScreen
+    )
+    .unwrap();
+
+    // Tell the terminal to do a full redraw
+    sender.send_fn(|e| {
+        e.term().clear()?;
+        Ok(())
+    });
+
+    res
+}
+
 impl Editor {
     pub fn init(&mut self) {
         self.state.insert(buffer::Storage::default());
@@ -63,6 +108,7 @@ impl Editor {
         self.state.insert(InputState::new("normal"));
         self.state.insert(Running(true));
         self.state.insert(Theme::default());
+        self.state.insert(layout::WindowLayout::new());
     }
 
     pub fn run(mut self) {
@@ -70,14 +116,15 @@ impl Editor {
         crossterm::execute!(
             stdout(),
             event::PushKeyboardEnhancementFlags(
-                event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES // | event::KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-                                                                           // | event::KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
             ),
             event::EnableBracketedPaste
         )
         .unwrap();
 
-        let res = self.run_inner(term);
+        self.term = Some(term);
+
+        let res = self.run_inner();
 
         crossterm::execute!(
             stdout(),
@@ -90,7 +137,7 @@ impl Editor {
         res.unwrap()
     }
 
-    fn run_inner(&mut self, mut term: ratatui::DefaultTerminal) -> anyhow::Result<()> {
+    fn run_inner(&mut self) -> anyhow::Result<()> {
         while self.state.get::<&Running>().0 {
             let event = match crossterm::event::poll(Duration::from_millis(50))? {
                 true => Some(crossterm::event::read()?),
@@ -104,6 +151,7 @@ impl Editor {
                     event::Event::Key(k) => {
                         match self.state.get::<&mut InputState>().step(Chord::from(k)) {
                             Step::Complete(c, _chords) => {
+                                self.state.get::<&mut Flags>().set("input_tree_show", false);
                                 c(&mut self.state)?;
                             }
                             Step::Step => {
@@ -121,44 +169,30 @@ impl Editor {
             self.flush()?;
 
             {
-                let (bufs, store) = self.state.get::<(
+                let (bufs, store, windows) = self.state.get::<(
                     &mut buffer::Storage,
                     &mut kwark_tree_sitter::store::LanguageStore,
+                    &mut layout::WindowLayout,
                 )>();
 
                 bufs.update_all(store)?;
+                windows.update_all(bufs);
             }
 
-            // TODO: The Window:
-            // TODO: The window is made up of 3 major parts
-            // TODO: ---- TOP BAR ----
-            // TODO: WINDOWS & tab-bar
-            // TODO: --- BOTTOM BAR --
-            // TODO:
-            // TODO: The Bottom Bar is a set of text in the left, middle, and right that can be changed
-            // TODO: The Windows are either terminals or buffers that are rendered, each window also gets a tab-bar
-            // TODO: The Top Bar is also a set of left, middle, and right text that is fully customizable
+            let mut term = self.take_term();
 
             term.draw(|frame| {
                 // Remove needed states from the storage
                 let bufs = self.state.take::<buffer::Storage>();
                 let mut pipeline = self.state.take::<Pipeline>();
+                let windows = self.state.take::<layout::WindowLayout>();
 
-                match bufs.iter().next() {
-                    Some((_, buf)) => {
-                        buf.render(&mut pipeline, &mut self.state, frame, frame.area())
-                    }
-                    None => {
-                        frame.render_widget(
-                            Paragraph::new("Kwark").centered().green(),
-                            frame.area(),
-                        );
-                    }
-                };
+                windows.render(&bufs, frame, frame.area(), &mut pipeline, &mut self.state);
 
                 // Re-insert the states
                 self.state.insert(bufs);
                 self.state.insert(pipeline);
+                self.state.insert(windows);
 
                 let (state, flags) = self.state.get::<(&InputState, &Flags)>();
                 if flags.get("input_tree_show") {
@@ -176,12 +210,18 @@ impl Editor {
                     let vertical_layer = vertical![==80%, ==20%].split(frame.area())[1];
                     let rect = horizontal![==60%, ==40%].split(vertical_layer)[1];
 
+                    // Clear the area under the widget
+                    frame.render_widget(Clear, rect);
+
+                    // Render the actual widget
                     frame.render_widget(
                         Paragraph::new(lines).block(Block::new().borders(Borders::ALL)),
                         rect,
                     );
                 }
             })?;
+
+            self.set_term(term);
         }
 
         Ok(())

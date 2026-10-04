@@ -6,6 +6,8 @@ use std::{
     sync::mpsc::{self, Receiver, Sender},
 };
 
+use ratatui::DefaultTerminal;
+
 use crate::events::EventStorage;
 
 pub type CallbackFn = Box<dyn FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static>;
@@ -16,6 +18,8 @@ pub enum Callback {
 }
 
 pub struct Editor {
+    pub(crate) term: Option<ratatui::DefaultTerminal>,
+
     pub state: State,
 
     pub events: EventStorage,
@@ -42,6 +46,8 @@ impl Default for Editor {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
         Self {
+            term: None,
+
             state: State::new(tx),
 
             events: EventStorage::default(),
@@ -70,6 +76,22 @@ impl Editor {
         }
 
         Ok(())
+    }
+
+    pub(crate) fn take_term(&mut self) -> DefaultTerminal {
+        self.term
+            .take()
+            .expect("terminal should exist when it's accessed")
+    }
+
+    pub(crate) fn set_term(&mut self, term: DefaultTerminal) {
+        self.term = Some(term)
+    }
+
+    pub fn term(&mut self) -> &mut DefaultTerminal {
+        self.term
+            .as_mut()
+            .expect("terminal should exist when it's accessed")
     }
 }
 

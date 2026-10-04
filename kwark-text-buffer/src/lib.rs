@@ -45,7 +45,7 @@ impl BufferEntry {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum BufferKind {
     Scratch(String),
     File(PathBuf),
@@ -55,7 +55,13 @@ impl Display for BufferKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Scratch(name) => write!(f, "{name}"),
-            Self::File(path) => write!(f, "{}", path.display()),
+            Self::File(path) => write!(
+                f,
+                "{}",
+                path.file_name()
+                    .map(|x| x.display().to_string())
+                    .unwrap_or_default()
+            ),
         }
     }
 }

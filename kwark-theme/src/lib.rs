@@ -46,7 +46,7 @@ impl Theme {
     /// Theme includes Nothing, we ask for `a.b`, no `a.b`, no `a`, return whatever the default style is.
     pub fn get(&self, mut name: &str) -> Style {
         if let Some(s) = self.styles.get(name) {
-            return s.clone();
+            return *s;
         }
 
         // Take the left side over and over
@@ -54,7 +54,7 @@ impl Theme {
             name = left;
 
             if let Some(s) = self.styles.get(name) {
-                return s.clone();
+                return *s;
             }
         }
 

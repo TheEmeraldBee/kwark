@@ -1,7 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fmt::Display};
 
 use kwark_text_buffer::{self as text, BoundCursorSet};
-use kwark_text_buffer_renderer::Pipeline;
+use kwark_text_buffer_renderer::{Pipeline, RenderArgs};
 use kwark_tree_sitter::prelude::*;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,9 +18,9 @@ pub type Result<T> = core::result::Result<T, Error>;
 /// Some kind of text that can be rendered/used as a buffer
 pub enum Buffer {
     Text {
-        path: PathBuf,
-        buf: text::BufferEntry,
-        cursors: text::CursorSet,
+        id: text::BufferKind,
+        buf: Box<text::BufferEntry>,
+        cursors: Box<text::CursorSet>,
 
         tree: Option<SyntaxTree>,
 
@@ -34,7 +34,7 @@ impl Buffer {
     /// Creates a new index for the Buffer given an incrementable index
     pub fn create_index(&self, tracker: &mut usize) -> ID {
         match self {
-            Self::Text { path, .. } => ID::Text(path.clone()),
+            Self::Text { id, .. } => ID::Text(id.clone()),
             Self::Widget(_) => {
                 let id = ID::Widget(*tracker);
                 *tracker += 1;
@@ -86,16 +86,17 @@ impl Buffer {
             } => {
                 let carets = cursors.cursors();
                 let primary = cursors.primary();
-                pipeline.render(
-                    buf.buffer.rope(),
+                pipeline.render(RenderArgs {
+                    rope: buf.buffer.rope(),
+                    scroll_top: 0,
+                    cursors: carets,
+                    tree: tree.as_ref(),
+                    area: rect,
+                    buf: frame.buffer_mut(),
+
                     state,
-                    0,
-                    carets,
                     primary,
-                    tree.as_ref(),
-                    rect,
-                    frame.buffer_mut(),
-                );
+                });
             }
             Self::Widget(_) => {}
         }
@@ -115,8 +116,21 @@ impl Buffer {
 /// A basic Identifier to differentiate between different buffers
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ID {
-    Text(PathBuf),
+    Text(kwark_text_buffer::BufferKind),
     Widget(usize),
+}
+
+impl Display for ID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Text(t) => t.to_string(),
+                Self::Widget(i) => i.to_string(),
+            }
+        )
+    }
 }
 
 /// A basic storage for a list of Buffers
@@ -203,12 +217,26 @@ impl Storage {
 }
 
 /// A storage of [`ID`]s with an actively selected buffer
+#[derive(Default)]
 pub struct List {
     active: usize,
     ids: Vec<ID>,
 }
 
 impl List {
+    /// Returns whether or not there is a buffer open in the list
+    pub fn is_empty(&mut self) -> bool {
+        self.ids.is_empty()
+    }
+
+    /// Iterate through all buffers in the list, paired with a boolean of whether it's the selected
+    pub fn iter(&self) -> impl Iterator<Item = (bool, &ID)> {
+        self.ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (self.active == i, id))
+    }
+
     /// Sets the actively selected buffer to the passed [`ID`]
     ///
     /// If not already in the list, inserts it
@@ -245,6 +273,10 @@ impl List {
 
     /// Closes all buffers other than the currently selected one
     pub fn close_other(&mut self) {
+        if self.ids.is_empty() {
+            return;
+        }
+
         let id = self.ids.remove(self.active);
         self.ids.clear();
 
@@ -257,6 +289,10 @@ impl List {
     ///
     /// Wraps if going `< 0` or `> list length`
     pub fn move_primary(&mut self, dist: isize) {
+        if self.ids.is_empty() {
+            return;
+        }
+
         let optional = self.active as isize + dist;
         self.active = optional.rem_euclid(self.ids.len() as isize) as usize;
     }
@@ -270,6 +306,6 @@ impl List {
     pub fn update(&mut self, storage: &Storage) {
         self.ids.retain(|x| storage.has(x));
 
-        self.active = self.active.min(self.ids.len() - 1);
+        self.active = self.active.min(self.ids.len().saturating_sub(1));
     }
 }

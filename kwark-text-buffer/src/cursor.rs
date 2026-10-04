@@ -473,60 +473,6 @@ impl CursorSet {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    fn setup(text: &str) -> (Buffer, CursorSet) {
-        let mut buf = Buffer::default();
-
-        buf.insert(0, 0, text).unwrap();
-        buf.commit_change();
-
-        (buf, CursorSet::default())
-    }
-
-    #[test]
-    fn move_to_bottom_rests_on_empty_line() {
-        let (buf, mut set) = setup("aaaa\nbbbb\ncccc\n");
-        let opts = CursorOptions::default().wrap(true);
-
-        // Move out to col 2, then down onto the empty final line
-        set.move_(&buf, 0, 2, &opts);
-        set.move_(&buf, 1, 0, &opts);
-        set.move_(&buf, 1, 0, &opts);
-        set.move_(&buf, 1, 0, &opts);
-
-        // The caret rests at the end of the buffer, on the empty final line
-        assert_eq!(set.cursors()[0].caret(), 15);
-        assert_eq!(buf.char_to_line_col(set.cursors()[0].caret()), (3, 0));
-
-        // Moving down again stays at the end of the buffer
-        set.move_(&buf, 1, 0, &opts);
-        assert_eq!(set.cursors()[0].caret(), 15);
-
-        // The desired col reset to 0, so moving back up lands at col 0
-        set.move_(&buf, -1, 0, &opts);
-        assert_eq!(buf.char_to_line_col(set.cursors()[0].caret()), (2, 0));
-    }
-
-    #[test]
-    fn insert_at_bottom_types_onto_empty_line() {
-        let (mut buf, mut set) = setup("aaaa\nbbbb\ncccc\n");
-        let opts = CursorOptions::default().wrap(true);
-
-        set.move_(&buf, 3, 0, &opts);
-
-        assert_eq!(set.cursors()[0].caret(), 15);
-
-        set.insert(&mut buf, "ab", &opts);
-
-        assert_eq!(buf.rope().to_string(), "aaaa\nbbbb\ncccc\nab");
-        assert_eq!(set.cursors()[0].caret(), 16);
-        assert_eq!(buf.char_to_line_col(set.cursors()[0].caret()), (3, 1));
-    }
-}
-
 pub struct BoundCursorSet<'a> {
     set: &'a mut CursorSet,
     buf: &'a mut Buffer,

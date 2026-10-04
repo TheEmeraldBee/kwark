@@ -274,14 +274,14 @@ impl<S: 'static> InputTree<S> {
         &mut self,
         keys: &[impl AsRef<str>],
         desc: impl Into<String>,
-        event: Event<S>,
+        event: impl Fn(&mut S) -> anyhow::Result<()> + 'static,
     ) -> anyhow::Result<()> {
         let chords = keys
             .iter()
             .map(|x| parse_chord(x.as_ref()))
             .collect::<Result<Vec<Chord>, ParseError>>()?;
 
-        self.register(&chords, desc, event);
+        self.register(&chords, desc, Rc::new(event));
 
         Ok(())
     }

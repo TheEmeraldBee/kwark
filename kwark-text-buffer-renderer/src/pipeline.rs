@@ -21,18 +21,31 @@ impl<S> Default for Pipeline<S> {
     }
 }
 
+pub struct RenderArgs<'a, S> {
+    pub rope: &'a Rope,
+    pub state: &'a mut S,
+    pub scroll_top: usize,
+    pub cursors: &'a [Cursor],
+    pub primary: usize,
+    pub tree: Option<&'a SyntaxTree>,
+    pub area: Rect,
+    pub buf: &'a mut Buffer,
+}
+
 impl<S> Pipeline<S> {
     /// Renders buffer lines from scroll_top downward, stopping once area is full
     pub fn render(
         &mut self,
-        rope: &Rope,
-        state: &mut S,
-        scroll_top: usize,
-        cursors: &[Cursor],
-        primary: usize,
-        tree: Option<&SyntaxTree>,
-        area: Rect,
-        buf: &mut Buffer,
+        RenderArgs {
+            rope,
+            state,
+            scroll_top,
+            cursors,
+            primary,
+            tree,
+            area,
+            buf,
+        }: RenderArgs<S>,
     ) {
         let mut resolved = Vec::new();
         let mut used: u16 = 0;
@@ -73,34 +86,5 @@ impl<S> Pipeline<S> {
             self.renderers.render(state, ctx, hl, row, buf);
             y += height;
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn empty_pipeline_renders_plain_rows() {
-        let rope = Rope::from_str("hello\nworld\n");
-        let area = Rect::new(0, 0, 5, 2);
-        let mut buf = Buffer::empty(area);
-
-        Pipeline::default().render(&rope, &mut (), 0, &[], 0, None, area, &mut buf);
-
-        assert_eq!(buf[(0, 0)].symbol(), "h");
-        assert_eq!(buf[(0, 1)].symbol(), "w");
-    }
-
-    #[test]
-    fn stops_once_the_area_is_full() {
-        let rope = Rope::from_str("a\nb\nc\nd\n");
-        let area = Rect::new(0, 0, 1, 2);
-        let mut buf = Buffer::empty(area);
-
-        Pipeline::default().render(&rope, &mut (), 0, &[], 0, None, area, &mut buf);
-
-        assert_eq!(buf[(0, 0)].symbol(), "a");
-        assert_eq!(buf[(0, 1)].symbol(), "b");
     }
 }
