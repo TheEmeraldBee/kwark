@@ -191,17 +191,9 @@ impl Buffer {
 
     /// Clamp a character position into the buffer
     ///
-    /// The end of the buffer is valid when the final line is empty
-    pub fn clamp(&self, mut chr: usize) -> usize {
-        let len = self.rope.len_chars();
-
-        if self.rope.line(self.rope.len_lines() - 1).len_chars() == 0 {
-            chr = chr.min(len);
-        } else {
-            chr = chr.min(len.saturating_sub(1));
-        }
-
-        chr
+    /// The position just after the last character is always valid
+    pub fn clamp(&self, chr: usize) -> usize {
+        chr.min(self.rope.len_chars())
     }
 
     pub fn char_to_line_col(&self, mut chr: usize) -> (usize, usize) {
@@ -211,6 +203,30 @@ impl Buffer {
         let start_pos = self.rope.line_to_char(line);
 
         (line, chr - start_pos)
+    }
+
+    /// Returns the greatest column valid for `line`
+    ///
+    /// Usually one less than the line's length, except the buffer's final
+    /// line when it has no trailing newline, where resting just past the
+    /// last character is also valid
+    pub fn max_col(&self, mut line: usize) -> usize {
+        if line >= self.rope.len_lines() {
+            line = self.rope.len_lines() - 1;
+        }
+
+        let line_char = self.rope.line_to_char(line);
+        let line_len = self.rope.line(line).len_chars();
+
+        if line_len == 0 {
+            return 0;
+        }
+
+        if line_char + line_len == self.rope.len_chars() {
+            line_len
+        } else {
+            line_len - 1
+        }
     }
 
     /// Converts a line, column pair into a resulting character index
@@ -229,8 +245,10 @@ impl Buffer {
             return line_char;
         }
 
-        if col >= line_len {
-            col = line_len - 1;
+        let max_col = self.max_col(line);
+
+        if col > max_col {
+            col = max_col;
         }
 
         line_char + col
@@ -341,6 +359,22 @@ pub mod test {
         assert_eq!(buf.line_col_to_char(1, 5), 4);
         assert_eq!(buf.char_to_line_col(4), (1, 0));
         assert_eq!(buf.clamp(10), 4);
+    }
+
+    #[test]
+    pub fn test_no_trailing_newline_rests_past_last_char() {
+        let mut buf = Buffer::default();
+
+        buf.insert(0, 0, "abc").unwrap();
+
+        // The end of the buffer rests just past the last character
+        assert_eq!(buf.clamp(10), 3);
+        assert_eq!(buf.char_to_line_col(3), (0, 3));
+        assert_eq!(buf.line_col_to_char(0, 3), 3);
+        assert_eq!(buf.line_col_to_char(0, 10), 3);
+
+        buf.insert(0, 3, "d").unwrap();
+        assert_eq!(buf.rope().to_string(), "abcd");
     }
 
     #[test]

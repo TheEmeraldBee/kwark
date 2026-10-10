@@ -1,6 +1,6 @@
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyModifiers, MouseButton};
 
-use crate::Chord;
+use crate::{Chord, Code};
 
 /// Error returned when a chord string can't be parsed
 #[derive(Debug, thiserror::Error)]
@@ -32,7 +32,7 @@ pub fn parse_chord(input: &str) -> Result<Chord, ParseError> {
         mods |= parse_modifier(token)?;
     }
 
-    let code = parse_key(key_str)?;
+    let code = parse_code(key_str)?;
 
     Ok(Chord::new(code, mods))
 }
@@ -49,8 +49,15 @@ fn parse_modifier(token: &str) -> Result<KeyModifiers, ParseError> {
     }
 }
 
-fn parse_key(token: &str) -> Result<KeyCode, ParseError> {
+fn parse_code(token: &str) -> Result<Code, ParseError> {
     let code = match token {
+        "mouse_1" => return Ok(Code::Mouse(MouseButton::Left)),
+        "mouse_2" => return Ok(Code::Mouse(MouseButton::Right)),
+        "mouse_3" => return Ok(Code::Mouse(MouseButton::Middle)),
+        "scroll_up" => return Ok(Code::ScrollUp),
+        "scroll_down" => return Ok(Code::ScrollDown),
+        "scroll_left" => return Ok(Code::ScrollLeft),
+        "scroll_right" => return Ok(Code::ScrollRight),
         "-" => KeyCode::Char('-'),
         "space" => KeyCode::Char(' '),
         "tab" => KeyCode::Tab,
@@ -79,7 +86,7 @@ fn parse_key(token: &str) -> Result<KeyCode, ParseError> {
         }
     };
 
-    Ok(code)
+    Ok(Code::Key(code))
 }
 
 #[cfg(test)]
@@ -90,7 +97,7 @@ mod tests {
     fn parses_single_key() {
         assert_eq!(
             parse_chord("d").unwrap(),
-            Chord::new(KeyCode::Char('d'), KeyModifiers::NONE)
+            Chord::new(Code::Key(KeyCode::Char('d')), KeyModifiers::NONE)
         );
     }
 
@@ -99,7 +106,7 @@ mod tests {
         assert_eq!(
             parse_chord("ctrl-alt-d").unwrap(),
             Chord::new(
-                KeyCode::Char('d'),
+                Code::Key(KeyCode::Char('d')),
                 KeyModifiers::CONTROL | KeyModifiers::ALT
             )
         );
@@ -110,7 +117,7 @@ mod tests {
         assert_eq!(
             parse_chord("ctrl-alt-space").unwrap(),
             Chord::new(
-                KeyCode::Char(' '),
+                Code::Key(KeyCode::Char(' ')),
                 KeyModifiers::CONTROL | KeyModifiers::ALT
             )
         );
@@ -121,7 +128,7 @@ mod tests {
         assert_eq!(
             parse_chord("ctrl-alt--").unwrap(),
             Chord::new(
-                KeyCode::Char('-'),
+                Code::Key(KeyCode::Char('-')),
                 KeyModifiers::CONTROL | KeyModifiers::ALT
             )
         );
@@ -131,13 +138,13 @@ mod tests {
     fn parses_bare_hyphen() {
         assert_eq!(
             parse_chord("-").unwrap(),
-            Chord::new(KeyCode::Char('-'), KeyModifiers::NONE)
+            Chord::new(Code::Key(KeyCode::Char('-')), KeyModifiers::NONE)
         );
     }
 
     #[test]
     fn normalizes_capital_forms() {
-        let expected = Chord::new(KeyCode::Char('a'), KeyModifiers::SHIFT);
+        let expected = Chord::new(Code::Key(KeyCode::Char('a')), KeyModifiers::SHIFT);
         assert_eq!(parse_chord("shift-a").unwrap(), expected);
         assert_eq!(parse_chord("A").unwrap(), expected);
         assert_eq!(parse_chord("shift-A").unwrap(), expected);
@@ -147,7 +154,27 @@ mod tests {
     fn parses_function_keys() {
         assert_eq!(
             parse_chord("f12").unwrap(),
-            Chord::new(KeyCode::F(12), KeyModifiers::NONE)
+            Chord::new(Code::Key(KeyCode::F(12)), KeyModifiers::NONE)
+        );
+    }
+
+    #[test]
+    fn parses_mouse_buttons() {
+        assert_eq!(
+            parse_chord("mouse_1").unwrap(),
+            Chord::new(Code::Mouse(MouseButton::Left), KeyModifiers::NONE)
+        );
+        assert_eq!(
+            parse_chord("ctrl-mouse_2").unwrap(),
+            Chord::new(Code::Mouse(MouseButton::Right), KeyModifiers::CONTROL)
+        );
+    }
+
+    #[test]
+    fn parses_scroll_ticks() {
+        assert_eq!(
+            parse_chord("scroll_up").unwrap(),
+            Chord::new(Code::ScrollUp, KeyModifiers::NONE)
         );
     }
 

@@ -1,3 +1,4 @@
+pub mod detect;
 pub mod error;
 pub mod injection;
 pub mod position;
@@ -7,6 +8,7 @@ pub mod store;
 pub mod tree;
 
 pub mod prelude {
+    pub use crate::detect::*;
     pub use crate::error::*;
     pub use crate::position::*;
     pub use crate::predicates::*;

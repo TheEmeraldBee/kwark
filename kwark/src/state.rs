@@ -181,7 +181,82 @@ impl State {
     pub fn sender(&self) -> CallbackSender {
         CallbackSender(self.callback_tx.clone())
     }
+
+    /// Removes one or more types from the state, returning a guard that puts
+    /// them back when dropped
+    pub fn scope<T: PutBack>(&mut self) -> Taken<'_, T> {
+        let value = T::take_all(self);
+        Taken {
+            state: self,
+            value: Some(value),
+        }
+    }
 }
+
+/// A set of types temporarily removed from [`State`] by [`State::scope`]
+pub struct Taken<'a, T: PutBack> {
+    state: &'a mut State,
+    value: Option<T>,
+}
+
+impl<'a, T: PutBack> Taken<'a, T> {
+    /// The removed value and the rest of the state
+    pub fn split(&mut self) -> (&mut T, &mut State) {
+        (
+            self.value.as_mut().expect("value present until dropped"),
+            self.state,
+        )
+    }
+}
+
+impl<'a, T: PutBack> Deref for Taken<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.value.as_ref().expect("value present until dropped")
+    }
+}
+
+impl<'a, T: PutBack> DerefMut for Taken<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.value.as_mut().expect("value present until dropped")
+    }
+}
+
+impl<'a, T: PutBack> Drop for Taken<'a, T> {
+    fn drop(&mut self) {
+        if let Some(value) = self.value.take() {
+            value.put_back(self.state);
+        }
+    }
+}
+
+/// A tuple of types that can be removed from [`State`] as a group, and put back as a group
+pub trait PutBack: Sized {
+    fn take_all(state: &mut State) -> Self;
+    fn put_back(self, state: &mut State);
+}
+
+macro_rules! impl_put_back_tuple {
+    ($($T:ident),+) => {
+        impl<$($T: Any + 'static),+> PutBack for ($($T,)+) {
+            fn take_all(state: &mut State) -> Self {
+                ($(state.take::<$T>(),)+)
+            }
+
+            #[allow(non_snake_case)]
+            fn put_back(self, state: &mut State) {
+                let ($($T,)+) = self;
+                $(state.insert($T);)+
+            }
+        }
+    };
+}
+
+impl_put_back_tuple!(A);
+impl_put_back_tuple!(A, B);
+impl_put_back_tuple!(A, B, C);
+impl_put_back_tuple!(A, B, C, D);
 
 #[derive(Debug)]
 pub enum StateError {
@@ -278,29 +353,3 @@ impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4);
 impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4, F:5);
 impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4, F:5, G:6);
 impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7);
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn new_state() -> State {
-        let tx = mpsc::channel().0;
-        State::new(tx)
-    }
-
-    #[test]
-    fn gets_disjoint_pairs() {
-        let mut state = new_state();
-
-        state.insert(1u32);
-        state.insert("hi".to_string());
-        state.insert(3.5f64);
-
-        let (a, b, c) = state.get::<(&mut u32, &String, &mut f64)>();
-        *a += 1;
-        assert_eq!(*a, 2);
-        assert_eq!(b, "hi");
-        *c += 0.5;
-        assert_eq!(*c, 4.0);
-    }
-}

@@ -19,10 +19,10 @@ pub struct BufferEntry {
 }
 
 impl BufferEntry {
-    pub fn new_scratch(name: String) -> Self {
+    pub fn new_scratch(name: impl Into<String>) -> Self {
         Self {
             buffer: Buffer::default(),
-            kind: BufferKind::Scratch(name),
+            kind: BufferKind::Scratch(name.into()),
         }
     }
 

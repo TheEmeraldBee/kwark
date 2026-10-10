@@ -8,11 +8,16 @@ use tree_sitter::*;
 struct TSHighlight {
     range: Range<usize>,
     style: Style,
+    priority: usize,
 }
 
 impl Ranged for TSHighlight {
     fn range(&self) -> Range<usize> {
         self.range.clone()
+    }
+
+    fn priority(&self) -> usize {
+        self.priority
     }
 }
 
@@ -32,18 +37,22 @@ impl Highlighter<State> for TSHighlighter {
             .unwrap()
             .in_range(line_start..line_end)
             .flat_map(|m| {
+                let priority = m.pattern_index();
                 m.iter_captures()
                     .map(|x| TSHighlight {
                         range: x.1.byte_range(),
                         style: theme.get(&format!("ts.{}", x.0)),
+                        priority,
                     })
                     .collect::<Vec<_>>()
             })
             .combine(|a, b| {
                 let combined_style = combine([a.style, b.style]);
+                let range = a.range.start.min(b.range.start)..a.range.end.max(b.range.end);
                 TSHighlight {
-                    range: a.range,
+                    range,
                     style: combined_style,
+                    priority: a.priority.max(b.priority),
                 }
             })
             .finish();

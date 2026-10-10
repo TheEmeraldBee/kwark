@@ -1,7 +1,13 @@
-use std::{collections::HashMap, io, path::PathBuf, rc::Rc};
+use std::{
+    collections::HashMap,
+    io,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use tree_sitter::{LanguageError, Parser, Query};
 
+use crate::detect::parse_shebang;
 use crate::error::QueryLoadError;
 
 pub use tree_sitter::Language;
@@ -18,6 +24,10 @@ pub struct LanguageStore {
 struct StoredLanguage {
     language: Language,
     parser: Parser,
+
+    extensions: Vec<String>,
+    filenames: Vec<String>,
+    shebangs: Vec<String>,
 }
 
 impl LanguageStore {
@@ -84,23 +94,30 @@ impl LanguageStore {
 
     /// Registers a new language into the store
     ///
+    /// Returns a [`LanguageBuilder`] for attaching detection rules to it
+    ///
     /// # Errors
     /// Returns an error when creating the parser fails with the given language
     pub fn register(
         &mut self,
         name: impl Into<String>,
         lang: Language,
-    ) -> Result<&mut Self, LanguageError> {
+    ) -> Result<LanguageBuilder<'_>, LanguageError> {
         let mut parser = Parser::new();
         parser.set_language(&lang)?;
 
         let stored = StoredLanguage {
             language: lang,
             parser,
+            extensions: Vec::new(),
+            filenames: Vec::new(),
+            shebangs: Vec::new(),
         };
 
-        self.map.insert(name.into(), stored);
-        Ok(self)
+        let name = name.into();
+        self.map.insert(name.clone(), stored);
+
+        Ok(LanguageBuilder { store: self, name })
     }
 
     /// Retrieves the parser for the given language from the store
@@ -111,5 +128,126 @@ impl LanguageStore {
     /// Retrieves a language definition from the store
     pub fn get_language(&self, lang: &str) -> Option<&Language> {
         self.map.get(lang).map(|x| &x.language)
+    }
+
+    /// Resolves a buffer to a registered language name
+    ///
+    /// Tries, in order, the file name, the file extension, and the shebang
+    /// line, returning the first language whose detection rules match
+    pub fn detect(&self, path: Option<&Path>, first_line: Option<&str>) -> Option<&str> {
+        let file_name = path.and_then(|p| p.file_name()).and_then(|n| n.to_str());
+        let extension = path
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .map(str::to_lowercase);
+        let interpreter = first_line.and_then(parse_shebang);
+
+        if let Some(file_name) = file_name
+            && let Some(name) = self.find(|lang| lang.filenames.iter().any(|f| f == file_name))
+        {
+            return Some(name);
+        }
+
+        if let Some(extension) = &extension
+            && let Some(name) = self.find(|lang| lang.extensions.iter().any(|e| e == extension))
+        {
+            return Some(name);
+        }
+
+        if let Some(interpreter) = interpreter
+            && let Some(name) = self.find(|lang| lang.shebangs.iter().any(|s| s == interpreter))
+        {
+            return Some(name);
+        }
+
+        None
+    }
+
+    fn find(&self, matches: impl Fn(&StoredLanguage) -> bool) -> Option<&str> {
+        self.map
+            .iter()
+            .find(|(_, lang)| matches(lang))
+            .map(|(name, _)| name.as_str())
+    }
+}
+
+/// A handle for attaching detection rules to a just-registered language
+pub struct LanguageBuilder<'a> {
+    store: &'a mut LanguageStore,
+    name: String,
+}
+
+impl LanguageBuilder<'_> {
+    /// Adds file extensions (without the leading `.`) that detect this language
+    pub fn with_extensions(mut self, exts: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.stored().extensions.extend(exts.into_iter().map(Into::into));
+        self
+    }
+
+    /// Adds exact file names (e.g. `Dockerfile`) that detect this language
+    pub fn with_filenames(mut self, names: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.stored().filenames.extend(names.into_iter().map(Into::into));
+        self
+    }
+
+    /// Adds shebang interpreter names (e.g. `bash`) that detect this language
+    pub fn with_shebangs(mut self, interpreters: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.stored().shebangs.extend(interpreters.into_iter().map(Into::into));
+        self
+    }
+
+    fn stored(&mut self) -> &mut StoredLanguage {
+        self.store
+            .map
+            .get_mut(&self.name)
+            .expect("LanguageBuilder always holds a name that was just registered")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store_with_rust() -> LanguageStore {
+        let mut store = LanguageStore::new(PathBuf::from(env!("CARGO_MANIFEST_DIR"))).unwrap();
+
+        store
+            .register("rust", Language::new(tree_sitter_rust::LANGUAGE))
+            .unwrap()
+            .with_extensions(["rs"])
+            .with_filenames(["build.rs"])
+            .with_shebangs(["rustrun"]);
+
+        store
+    }
+
+    #[test]
+    fn detects_by_extension() {
+        let store = store_with_rust();
+        assert_eq!(store.detect(Some(Path::new("main.rs")), None), Some("rust"));
+    }
+
+    #[test]
+    fn detects_by_filename_even_without_extension_match() {
+        let store = store_with_rust();
+        assert_eq!(
+            store.detect(Some(Path::new("build.rs")), None),
+            Some("rust")
+        );
+    }
+
+    #[test]
+    fn detects_by_shebang_when_no_extension_matches() {
+        let store = store_with_rust();
+        assert_eq!(
+            store.detect(Some(Path::new("script")), Some("#!/usr/bin/env rustrun")),
+            Some("rust")
+        );
+    }
+
+    #[test]
+    fn no_match_returns_none() {
+        let store = store_with_rust();
+        assert_eq!(store.detect(Some(Path::new("notes.txt")), None), None);
     }
 }

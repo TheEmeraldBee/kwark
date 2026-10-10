@@ -3,19 +3,29 @@ use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
 use kwark_buffer as buffer;
-use ratatui::layout::{self, Rect};
+use kwark_text_buffer_renderer::Viewport;
+use ratatui::layout::{self, Position, Rect};
 
 use ratatui::prelude::*;
 use ratatui::widgets::Paragraph;
 
+/// Per-buffer state carried by a [`Window`]'s [`buffer::List`]
+#[derive(Default, Clone, Copy)]
+pub struct BufView {
+    scroll: usize,
+    viewport: Option<Viewport>,
+}
+
 /// A single pane in the editor
 #[derive(Default)]
 pub struct Window {
-    bufs: buffer::List,
+    bufs: buffer::List<BufView>,
+
+    rect: Option<Rect>,
 }
 
 impl Deref for Window {
-    type Target = buffer::List;
+    type Target = buffer::List<BufView>;
 
     fn deref(&self) -> &Self::Target {
         &self.bufs
@@ -30,12 +40,47 @@ impl DerefMut for Window {
 
 impl Window {
     fn new() -> Self {
-        Self::default()
+        Self {
+            bufs: buffer::List::new(),
+            rect: None,
+        }
+    }
+
+    /// The rect this window was drawn into on its last render
+    pub fn rect(&self) -> Option<Rect> {
+        self.rect
+    }
+
+    /// Splits a window's rect into its tab-bar header and its text area
+    pub fn split_rect(rect: Rect) -> (Rect, Rect) {
+        let mut header_rect = rect;
+        header_rect.height = 1;
+
+        let mut text_rect = rect;
+        text_rect.height = text_rect.height.saturating_sub(1);
+        text_rect.y += 1;
+
+        (header_rect, text_rect)
+    }
+
+    /// Scrolls the selected buffer by `delta` lines, clamped to `0..total_lines`
+    pub fn scroll_by(&mut self, delta: isize, total_lines: usize) {
+        let Some(view) = self.bufs.state_mut() else {
+            return;
+        };
+
+        let max = total_lines.saturating_sub(1);
+        view.scroll = (view.scroll as isize + delta).clamp(0, max as isize) as usize;
+    }
+
+    /// The last rendered viewport for the selected buffer, if it has been drawn
+    pub fn viewport(&self) -> Option<Viewport> {
+        self.bufs.state().and_then(|v| v.viewport)
     }
 
     /// Renders the window's active buffer to the given rect
     pub fn render(
-        &self,
+        &mut self,
         storage: &buffer::Storage,
         frame: &mut Frame<'_>,
         rect: Rect,
@@ -45,6 +90,8 @@ impl Window {
 
         is_active: bool,
     ) {
+        self.rect = Some(rect);
+
         let border_style = match is_active {
             true => Style::new().on_green(),
             false => Style::new(),
@@ -71,19 +118,22 @@ impl Window {
 
         let block_text = Paragraph::new(Line::from_iter(spans)).centered();
 
-        let mut header_rect = rect;
-        header_rect.height = 1;
+        let (header_rect, text_rect) = Self::split_rect(rect);
         frame.render_widget(block_text, header_rect);
 
-        let mut text_rect = rect;
-        text_rect.height -= 1;
-        text_rect.y += 1;
-
-        let Some(buf) = self.bufs.selected().and_then(|id| storage.get(&id)) else {
+        let Some(id) = self.bufs.selected() else {
+            return;
+        };
+        let Some(buf) = storage.get(&id) else {
             return;
         };
 
-        buf.render(pipeline, state, frame, text_rect);
+        let scroll = self.bufs.state().map(|v| v.scroll).unwrap_or(0);
+        let viewport = buf.render(pipeline, state, frame, text_rect, scroll);
+
+        if let Some(view) = self.bufs.state_mut() {
+            view.viewport = Some(viewport);
+        }
     }
 }
 
@@ -118,6 +168,22 @@ struct Split {
     parent: Option<NodeId>,
 }
 
+impl Split {
+    /// Divides `rect` into this split's two children's rects
+    fn rects(&self, rect: Rect) -> [Rect; 2] {
+        let percentage = (self.ratio * 100.0).round() as u16;
+        let rects = Layout::default()
+            .direction(self.direction)
+            .constraints([
+                layout::Constraint::Percentage(percentage),
+                layout::Constraint::Percentage(100 - percentage),
+            ])
+            .split(rect);
+
+        [rects[0], rects[1]]
+    }
+}
+
 /// The layout of the editor's windows
 pub struct WindowLayout {
     leaves: HashMap<LeafId, LeafEntry>,
@@ -137,7 +203,7 @@ impl Default for WindowLayout {
 }
 
 impl WindowLayout {
-    /// Creates a new window layout with a single window taking the whole layout
+    /// Creates a new window layout with a single window
     pub fn new() -> Self {
         let root = LeafId(0);
 
@@ -175,6 +241,13 @@ impl WindowLayout {
     /// Returns the active window, mutably
     pub fn active_mut(&mut self) -> &mut Window {
         &mut self.leaves.get_mut(&self.active).unwrap().window
+    }
+
+    /// Returns the window with the given id, mutably
+    ///
+    /// Returns `None` if the id doesn't exist
+    pub fn window_mut(&mut self, id: LeafId) -> Option<&mut Window> {
+        self.leaves.get_mut(&id).map(|entry| &mut entry.window)
     }
 
     /// Focuses the given window, if it exists
@@ -331,7 +404,7 @@ impl WindowLayout {
 
     /// Renders the layout to the frame in the given rect
     pub fn render(
-        &self,
+        &mut self,
         storage: &buffer::Storage,
         frame: &mut Frame<'_>,
         rect: Rect,
@@ -343,7 +416,7 @@ impl WindowLayout {
     }
 
     fn render_child(
-        &self,
+        &mut self,
         child: Child,
         storage: &buffer::Storage,
         frame: &mut Frame<'_>,
@@ -354,27 +427,50 @@ impl WindowLayout {
     ) {
         match child {
             Child::Leaf(id) => {
-                let entry = &self.leaves[&id];
+                let is_active = id == self.active;
+                let entry = self.leaves.get_mut(&id).unwrap();
                 entry
                     .window
-                    .render(storage, frame, rect, pipeline, state, id == self.active);
+                    .render(storage, frame, rect, pipeline, state, is_active);
             }
             Child::Split(id) => {
                 let split = &self.splits[&id];
+                let rects = split.rects(rect);
+                let children = split.children;
 
-                let percentage = (split.ratio * 100.0).round() as u16;
-                let rects = Layout::default()
-                    .direction(split.direction)
-                    .constraints([
-                        layout::Constraint::Percentage(percentage),
-                        layout::Constraint::Percentage(100 - percentage),
-                    ])
-                    .split(rect);
-
-                self.render_child(split.children[0], storage, frame, rects[0], pipeline, state);
-                self.render_child(split.children[1], storage, frame, rects[1], pipeline, state);
+                self.render_child(children[0], storage, frame, rects[0], pipeline, state);
+                self.render_child(children[1], storage, frame, rects[1], pipeline, state);
             }
         }
+    }
+
+    /// Finds the leaf window whose last-rendered rect contains `point`
+    pub fn locate(&self, point: Position) -> Option<(LeafId, Rect)> {
+        self.leaves.iter().find_map(|(&id, entry)| {
+            let rect = entry.window.rect()?;
+            rect.contains(point).then_some((id, rect))
+        })
+    }
+
+    /// Finds the window, buffer, and text position under a screen point
+    pub fn hit_test(
+        &self,
+        storage: &buffer::Storage,
+        pipeline: &mut Pipeline,
+        state: &mut State,
+        point: Position,
+    ) -> Option<(LeafId, buffer::ID, buffer::HitPosition)> {
+        let (leaf, leaf_rect) = self.locate(point)?;
+        let window = &self.leaves[&leaf].window;
+        let (_, text_rect) = Window::split_rect(leaf_rect);
+
+        let id = window.selected()?;
+        let scroll = window.state().map(|v| v.scroll).unwrap_or(0);
+
+        let pos = storage
+            .get(&id)?
+            .hit_test(pipeline, state, text_rect, scroll, point)?;
+        Some((leaf, id, pos))
     }
 
     fn reparent(&mut self, child: Child, parent: Option<NodeId>) {

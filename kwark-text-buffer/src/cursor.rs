@@ -257,7 +257,7 @@ impl CursorSet {
 
             let target_line = (line as isize + lines).clamp(0, len_lines as isize - 1) as usize;
             let line_chars = buf.rope().line(target_line).len_chars();
-            let line_len = line_chars.max(1);
+            let max_col = buf.max_col(target_line);
 
             // A 0-length line has no columns, so rest at the end of the file with col 0
             let mut desired_col = if line_chars == 0 {
@@ -265,7 +265,7 @@ impl CursorSet {
             } else {
                 cursor.desired_col
             };
-            let display_col = desired_col.min(line_len - 1);
+            let display_col = desired_col.min(max_col);
 
             let caret = buf.line_col_to_char(target_line, display_col);
 
@@ -277,7 +277,7 @@ impl CursorSet {
                     shifted
                 } else {
                     let col =
-                        (display_col as isize + columns).clamp(0, (line_len - 1) as isize) as usize;
+                        (display_col as isize + columns).clamp(0, max_col as isize) as usize;
                     desired_col = col;
                     buf.line_col_to_char(target_line, col)
                 }
@@ -307,7 +307,7 @@ impl CursorSet {
 
         primary.caret = buf.line_col_to_char(line, col);
 
-        if options.extend {
+        if !options.extend {
             primary.anchor = buf.line_col_to_char(line, col);
         }
 
@@ -566,5 +566,25 @@ impl<'a> BoundCursorSet<'a> {
 
         // Force-update the cursors **just** in case
         self.move_(0, 0, &CursorOptions::default());
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn backspace_at_true_eof_deletes_one_char() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+
+        buf.insert(0, 0, "abc").unwrap();
+        cursors.set(&buf, 0, 3, &CursorOptions::new());
+        assert_eq!(cursors.cursors()[0].caret(), 3);
+
+        cursors.move_(&buf, 0, -1, &CursorOptions::new().wrap(true).extend(true));
+        cursors.delete(&mut buf, &CursorOptions::new());
+
+        assert_eq!(buf.rope().to_string(), "ab");
     }
 }

@@ -646,6 +646,7 @@ dependencies = [
  "ropey",
  "thiserror 2.0.18",
  "tree-sitter",
+ "tree-sitter-rust",
 ]
 
 [[package]]

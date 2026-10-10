@@ -5,14 +5,18 @@ use std::{
 
 pub use kwark::prelude::*;
 use kwark::prelude::{
+    buffer::Storage,
     text_buffer::{BoundCursorSet, BufferEntry, CursorOptions, CursorSet},
     tree_sitter::LanguageStore,
 };
-use ratatui::layout::Direction;
+use ratatui::layout::{Direction, Position};
 
 mod highlighters;
 mod theme;
 use highlighters::*;
+
+mod renderers;
+use renderers::*;
 
 fn active_buffer(s: &mut State) -> Option<BoundCursorSet<'_>> {
     let id = s.get::<&WindowLayout>().active().selected()?;
@@ -64,6 +68,42 @@ fn bind_movement(
     Ok(())
 }
 
+fn buffer_len_lines(storage: &buffer::Storage, id: &buffer::ID) -> usize {
+    match storage.get(id) {
+        Some(buffer::Buffer::Text { buf, .. }) => buf.buffer.rope().len_lines(),
+        _ => 0,
+    }
+}
+
+fn scroll_window(s: &mut State, leaf: LeafId, delta: isize) {
+    let (layout, storage) = s.get::<(&mut WindowLayout, &buffer::Storage)>();
+
+    let Some(id) = layout.window_mut(leaf).and_then(|w| w.selected()) else {
+        return;
+    };
+
+    let total_lines = buffer_len_lines(storage, &id);
+
+    if let Some(window) = layout.window_mut(leaf) {
+        window.scroll_by(delta, total_lines);
+    }
+}
+
+fn create_scroll(delta: isize) -> impl Fn(&mut State) -> anyhow::Result<()> {
+    move |s: &mut State| {
+        let pos = *s.get::<&MousePosition>();
+        let point = Position::new(pos.column, pos.row);
+
+        let Some((leaf, _)) = s.get::<&WindowLayout>().locate(point) else {
+            return Ok(());
+        };
+
+        scroll_window(s, leaf, delta);
+
+        Ok(())
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     // Initialize the editor
     let mut editor = kwark::init();
@@ -81,6 +121,41 @@ fn main() -> anyhow::Result<()> {
         normal.desc(&["space"], "General Actions")?;
 
         normal.desc(&["space", "f"], "File Pickers")?;
+
+        normal.bind(&["ctrl-d"], "Scroll Down", |s| {
+            let leaf = s.get::<&WindowLayout>().active_id();
+            scroll_window(s, leaf, 10);
+            Ok(())
+        })?;
+
+        normal.bind(&["ctrl-u"], "Scroll Up", |s| {
+            let leaf = s.get::<&WindowLayout>().active_id();
+            scroll_window(s, leaf, -10);
+            Ok(())
+        })?;
+
+        normal.bind(&["scroll_up"], "", create_scroll(-3))?;
+
+        normal.bind(&["scroll_down"], "", create_scroll(3))?;
+
+        normal.bind(&["mouse_1"], "", |s| {
+            let pos = *s.get::<&MousePosition>();
+            let point = Position::new(pos.column, pos.row);
+
+            let mut taken = s.scope::<(buffer::Storage, Pipeline, WindowLayout)>();
+            let ((storage, pipeline, windows), state) = taken.split();
+
+            if let Some((leaf, id, hit)) = windows.hit_test(storage, pipeline, state, point) {
+                windows.focus(leaf);
+                windows.active_mut().select(id.clone());
+
+                if let Some(mut buf) = storage.get_mut(&id).and_then(|b| b.as_text()) {
+                    buf.set(hit.line, hit.col, &CursorOptions::new());
+                }
+            }
+
+            Ok(())
+        })?;
 
         normal.bind(&["space", "f", "f"], "Open FZF file picker", |s| {
             let value = replace_term(s.sender(), || {
@@ -207,15 +282,21 @@ fn main() -> anyhow::Result<()> {
 
             layout.split(Direction::Horizontal);
 
-            let buf = BufferEntry::new_scratch("helloworld".to_string());
-            let id = storage.insert(buffer::Buffer::Text {
-                id: buf.kind().clone(),
-                buf: Box::new(buf),
-                cursors: Box::new(CursorSet::new()),
-                tree: None,
-                parsed_version: 0,
-            });
+            const NAME_ROOT: &str = "scratch";
 
+            let mut num = 0;
+
+            while storage
+                .get(&buffer::ID::scratch(format!("{}_{}", NAME_ROOT, num)))
+                .is_some()
+            {
+                num += 1;
+            }
+
+            let buf_name = format!("{}_{}", NAME_ROOT, num);
+
+            let buf = BufferEntry::new_scratch(buf_name);
+            let id = storage.insert(buf);
             layout.active_mut().select(id);
 
             Ok(())
@@ -226,15 +307,21 @@ fn main() -> anyhow::Result<()> {
 
             layout.split(Direction::Vertical);
 
-            let buf = BufferEntry::new_scratch("helloworld".to_string());
-            let id = storage.insert(buffer::Buffer::Text {
-                id: buf.kind().clone(),
-                buf: Box::new(buf),
-                cursors: Box::new(CursorSet::new()),
-                tree: None,
-                parsed_version: 0,
-            });
+            const NAME_ROOT: &str = "scratch";
 
+            let mut num = 0;
+
+            while storage
+                .get(&buffer::ID::scratch(format!("{}_{}", NAME_ROOT, num)))
+                .is_some()
+            {
+                num += 1;
+            }
+
+            let buf_name = format!("{}_{}", NAME_ROOT, num);
+
+            let buf = BufferEntry::new_scratch(buf_name);
+            let id = storage.insert(buf);
             layout.active_mut().select(id);
 
             Ok(())
@@ -254,49 +341,49 @@ fn main() -> anyhow::Result<()> {
             },
         )?;
 
-        normal.bind(&[";", "h"], "Focus window left", |s| {
+        normal.bind(&["alt-h"], "Focus window left", |s| {
             s.get::<&mut WindowLayout>()
                 .focus_direction(Direction::Horizontal, false);
             Ok(())
         })?;
 
-        normal.bind(&[";", "l"], "Focus window right", |s| {
+        normal.bind(&["alt-l"], "Focus window right", |s| {
             s.get::<&mut WindowLayout>()
                 .focus_direction(Direction::Horizontal, true);
             Ok(())
         })?;
 
-        normal.bind(&[";", "k"], "Focus window up", |s| {
+        normal.bind(&["alt-k"], "Focus window up", |s| {
             s.get::<&mut WindowLayout>()
                 .focus_direction(Direction::Vertical, false);
             Ok(())
         })?;
 
-        normal.bind(&[";", "j"], "Focus window down", |s| {
+        normal.bind(&["alt-j"], "Focus window down", |s| {
             s.get::<&mut WindowLayout>()
                 .focus_direction(Direction::Vertical, true);
             Ok(())
         })?;
 
-        normal.bind(&[";", "H"], "Move border left", |s| {
+        normal.bind(&["alt-H"], "Move border left", |s| {
             s.get::<&mut WindowLayout>()
                 .resize(Direction::Horizontal, -0.05);
             Ok(())
         })?;
 
-        normal.bind(&[";", "L"], "Move border right", |s| {
+        normal.bind(&["alt-L"], "Move border right", |s| {
             s.get::<&mut WindowLayout>()
                 .resize(Direction::Horizontal, 0.05);
             Ok(())
         })?;
 
-        normal.bind(&[";", "K"], "Move border up", |s| {
+        normal.bind(&["alt-K"], "Move border up", |s| {
             s.get::<&mut WindowLayout>()
                 .resize(Direction::Vertical, -0.05);
             Ok(())
         })?;
 
-        normal.bind(&[";", "J"], "Move border down", |s| {
+        normal.bind(&["alt-J"], "Move border down", |s| {
             s.get::<&mut WindowLayout>()
                 .resize(Direction::Vertical, 0.05);
             Ok(())
@@ -500,7 +587,7 @@ fn main() -> anyhow::Result<()> {
                 }
 
                 let key_string = match chord.code {
-                    KeyCode::Char(c) => match chord.mods.contains(KeyModifiers::SHIFT) {
+                    Code::Key(KeyCode::Char(c)) => match chord.mods.contains(KeyModifiers::SHIFT) {
                         false => c.to_string(),
                         true => c.to_ascii_uppercase().to_string(),
                     },
@@ -515,21 +602,34 @@ fn main() -> anyhow::Result<()> {
         );
     }
 
+    let (layout, storage) = editor.get::<(&mut WindowLayout, &mut Storage)>();
+
+    let buf = text_buffer::BufferEntry::new_scratch("scratch");
+    let id = storage.insert(buf);
+    layout.active_mut().select(id);
+
     let store = editor.get::<&mut tree_sitter::LanguageStore>();
-    store.register(
-        "rust",
-        tree_sitter::Language::new(tree_sitter_rust::LANGUAGE),
-    )?;
+    store
+        .register(
+            "rust",
+            tree_sitter::Language::new(tree_sitter_rust::LANGUAGE),
+        )?
+        .with_extensions(["rs"]);
 
-    editor
-        .get::<&mut Pipeline>()
-        .highlighters
-        .push(TSHighlighter);
+    {
+        let pipeline = editor.get::<&mut Pipeline>();
 
-    editor
-        .get::<&mut Pipeline>()
-        .highlighters
-        .push(CursorHighlighter);
+        // Highlighters
+        pipeline.highlighters.push(TSHighlighter);
+        pipeline.highlighters.push(CursorHighlighter);
+
+        // Renderers
+        pipeline
+            .renderers
+            .push(HeaderRenderer::new().block::<CursorTag>());
+    }
+
+    theme::init_theme(&mut editor);
 
     // Run the actual editor
     editor.run();

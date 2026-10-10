@@ -2,6 +2,9 @@ use kwark::prelude::{text_buffer::CursorOptions, *};
 use ratatui::style::{Color, Modifier, Style};
 use text_render::*;
 
+#[derive(PartialEq, Eq, Debug)]
+pub struct CursorTag;
+
 /// Highlights the character under every cursor in the buffer
 pub struct CursorHighlighter;
 
@@ -30,7 +33,15 @@ impl Highlighter<State> for CursorHighlighter {
 
             let on_empty_line = len == 0 && caret == line_start;
 
-            if (caret >= line_start && caret < line_end) || on_empty_line {
+            // A caret resting just past the last character is only this
+            // line's if the line itself has no newline terminator, i.e. it
+            // is the buffer's true final line
+            let on_virtual_eof = len > 0
+                && caret == line_end
+                && line_end == ctx.rope.len_chars()
+                && ctx.text.char(len - 1) != '\n';
+
+            if (caret >= line_start && caret < line_end) || on_empty_line || on_virtual_eof {
                 let col = caret - line_start;
 
                 spans.push(StyleSpan {
@@ -53,7 +64,7 @@ impl Highlighter<State> for CursorHighlighter {
         if spans.is_empty() {
             None
         } else {
-            Some(Highlight::plain(spans))
+            Some(Highlight::tagged(spans, CursorTag))
         }
     }
 }

@@ -13,6 +13,13 @@ use crate::{
 /// A type to retrieve a byte-range
 pub trait Ranged {
     fn range(&self) -> Range<usize>;
+
+    /// This item's priority when it overlaps another at the same start
+    ///
+    /// Higher wins. Defaults to `0` for types with no notion of priority
+    fn priority(&self) -> usize {
+        0
+    }
 }
 
 /// One query match, with its source layer and `#set!` directives attached
@@ -55,6 +62,14 @@ impl<'a> Match<'a> {
     /// The language of the layer this match was found in
     pub fn layer_language(&self) -> &str {
         self.layer_language
+    }
+
+    /// The index of the pattern that produced this match within its query file
+    ///
+    /// Patterns declared later in a query file are conventionally more
+    /// specific, so a higher index means a higher-priority capture
+    pub fn pattern_index(&self) -> usize {
+        self.inner.pattern_index
     }
 
     /// The value of a `#set! key "value"` directive on this match's pattern
@@ -102,9 +117,15 @@ fn run_layer<S: Source, T>(
 pub struct Mapped<T>(Vec<T>);
 
 impl<T: Ranged> Mapped<T> {
-    /// Sorts by range, then folds `f` across every overlapping pair, left to right
+    /// Sorts by range (ties broken by ascending priority), then folds `f`
+    /// across every overlapping pair, left to right
+    ///
+    /// Within a pair, `f` is expected to prefer `b`'s data when the two
+    /// conflict, since `b` is always the higher-priority (or later-starting)
+    /// item of the two
     pub fn combine(mut self, f: impl Fn(T, T) -> T) -> Combined<T> {
-        self.0.sort_by_key(|t| t.range().start);
+        self.0
+            .sort_by_key(|t| (t.range().start, t.priority()));
 
         let mut out: Vec<T> = Vec::with_capacity(self.0.len());
 

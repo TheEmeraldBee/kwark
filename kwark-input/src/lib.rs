@@ -1,23 +1,36 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 mod parse;
 
 pub use parse::{ParseError, parse_chord};
 
+/// The origin of a [`Chord`]: a key press, a mouse button, or a scroll tick
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Code {
+    Key(KeyCode),
+    Mouse(MouseButton),
+    ScrollUp,
+    ScrollDown,
+    ScrollLeft,
+    ScrollRight,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Chord {
-    pub code: KeyCode,
+    pub code: Code,
     pub mods: KeyModifiers,
 }
 
 impl Chord {
     /// Builds a chord, folding an uppercase `Char` into its lowercase form plus `SHIFT`
-    pub fn new(code: KeyCode, mods: KeyModifiers) -> Self {
+    pub fn new(code: Code, mods: KeyModifiers) -> Self {
         match code {
-            KeyCode::Char(c) if c.is_uppercase() => Self {
-                code: KeyCode::Char(c.to_lowercase().next().unwrap_or(c)),
+            Code::Key(KeyCode::Char(c)) if c.is_uppercase() => Self {
+                code: Code::Key(KeyCode::Char(c.to_lowercase().next().unwrap_or(c))),
                 mods: mods | KeyModifiers::SHIFT,
             },
             _ => Self { code, mods },
@@ -27,7 +40,27 @@ impl Chord {
 
 impl From<KeyEvent> for Chord {
     fn from(event: KeyEvent) -> Self {
-        Self::new(event.code, event.modifiers)
+        Self::new(Code::Key(event.code), event.modifiers)
+    }
+}
+
+/// Fails for move, drag, and release, which have no key-press equivalent to bind
+impl TryFrom<MouseEvent> for Chord {
+    type Error = ();
+
+    fn try_from(event: MouseEvent) -> Result<Self, ()> {
+        let code = match event.kind {
+            MouseEventKind::Down(button) => Code::Mouse(button),
+            MouseEventKind::ScrollUp => Code::ScrollUp,
+            MouseEventKind::ScrollDown => Code::ScrollDown,
+            MouseEventKind::ScrollLeft => Code::ScrollLeft,
+            MouseEventKind::ScrollRight => Code::ScrollRight,
+            MouseEventKind::Up(_) | MouseEventKind::Drag(_) | MouseEventKind::Moved => {
+                return Err(());
+            }
+        };
+
+        Ok(Self::new(code, event.modifiers))
     }
 }
 
@@ -47,24 +80,31 @@ impl std::fmt::Display for Chord {
         }
 
         match self.code {
-            KeyCode::Char(' ') => write!(f, "space"),
-            KeyCode::Char(c) => write!(f, "{c}"),
-            KeyCode::Tab => write!(f, "tab"),
-            KeyCode::Enter => write!(f, "enter"),
-            KeyCode::Esc => write!(f, "esc"),
-            KeyCode::Backspace => write!(f, "backspace"),
-            KeyCode::Delete => write!(f, "delete"),
-            KeyCode::Insert => write!(f, "insert"),
-            KeyCode::Home => write!(f, "home"),
-            KeyCode::End => write!(f, "end"),
-            KeyCode::PageUp => write!(f, "pageup"),
-            KeyCode::PageDown => write!(f, "pagedown"),
-            KeyCode::Up => write!(f, "up"),
-            KeyCode::Down => write!(f, "down"),
-            KeyCode::Left => write!(f, "left"),
-            KeyCode::Right => write!(f, "right"),
-            KeyCode::F(n) => write!(f, "f{n}"),
-            other => write!(f, "{other:?}"),
+            Code::Key(KeyCode::Char(' ')) => write!(f, "space"),
+            Code::Key(KeyCode::Char(c)) => write!(f, "{c}"),
+            Code::Key(KeyCode::Tab) => write!(f, "tab"),
+            Code::Key(KeyCode::Enter) => write!(f, "enter"),
+            Code::Key(KeyCode::Esc) => write!(f, "esc"),
+            Code::Key(KeyCode::Backspace) => write!(f, "backspace"),
+            Code::Key(KeyCode::Delete) => write!(f, "delete"),
+            Code::Key(KeyCode::Insert) => write!(f, "insert"),
+            Code::Key(KeyCode::Home) => write!(f, "home"),
+            Code::Key(KeyCode::End) => write!(f, "end"),
+            Code::Key(KeyCode::PageUp) => write!(f, "pageup"),
+            Code::Key(KeyCode::PageDown) => write!(f, "pagedown"),
+            Code::Key(KeyCode::Up) => write!(f, "up"),
+            Code::Key(KeyCode::Down) => write!(f, "down"),
+            Code::Key(KeyCode::Left) => write!(f, "left"),
+            Code::Key(KeyCode::Right) => write!(f, "right"),
+            Code::Key(KeyCode::F(n)) => write!(f, "f{n}"),
+            Code::Key(other) => write!(f, "{other:?}"),
+            Code::Mouse(MouseButton::Left) => write!(f, "mouse_1"),
+            Code::Mouse(MouseButton::Right) => write!(f, "mouse_2"),
+            Code::Mouse(MouseButton::Middle) => write!(f, "mouse_3"),
+            Code::ScrollUp => write!(f, "scroll_up"),
+            Code::ScrollDown => write!(f, "scroll_down"),
+            Code::ScrollLeft => write!(f, "scroll_left"),
+            Code::ScrollRight => write!(f, "scroll_right"),
         }
     }
 }

@@ -4,7 +4,7 @@ use crossterm::{
     event,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
-pub use kwark_input::{Chord, Step};
+pub use kwark_input::{Chord, Code, Step};
 
 pub type InputState = kwark_input::InputState<State>;
 pub type InputTree = kwark_input::InputTree<State>;
@@ -20,11 +20,12 @@ pub mod prelude {
     pub use crate::Flags;
     pub use crate::InputState;
     pub use crate::InputTree;
+    pub use crate::MousePosition;
     pub use crate::Running;
     pub use crate::State;
 
     pub use crossterm::event::{KeyCode, KeyModifiers};
-    pub use kwark_input::{Chord, Step};
+    pub use kwark_input::{Chord, Code, Step};
 
     pub use kwark_buffer as buffer;
     pub use kwark_text_buffer as text_buffer;
@@ -59,6 +60,13 @@ impl Running {
     }
 }
 
+/// The screen position of the most recent mouse event, read by chords bound to a mouse press
+#[derive(Default, Clone, Copy)]
+pub struct MousePosition {
+    pub column: u16,
+    pub row: u16,
+}
+
 pub fn init() -> Editor {
     let mut editor = Editor::default();
     editor.init();
@@ -76,6 +84,7 @@ pub fn replace<R>(
         stdout(),
         event::PopKeyboardEnhancementFlags,
         event::DisableBracketedPaste,
+        event::DisableMouseCapture,
         LeaveAlternateScreen,
     )
     .unwrap();
@@ -88,6 +97,7 @@ pub fn replace<R>(
             event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
         ),
         event::EnableBracketedPaste,
+        event::EnableMouseCapture,
         EnterAlternateScreen
     )
     .unwrap();
@@ -109,6 +119,7 @@ impl Editor {
         self.state.insert(Running(true));
         self.state.insert(Theme::default());
         self.state.insert(layout::WindowLayout::new());
+        self.state.insert(MousePosition::default());
     }
 
     pub fn run(mut self) {
@@ -118,7 +129,8 @@ impl Editor {
             event::PushKeyboardEnhancementFlags(
                 event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
             ),
-            event::EnableBracketedPaste
+            event::EnableBracketedPaste,
+            event::EnableMouseCapture,
         )
         .unwrap();
 
@@ -129,7 +141,8 @@ impl Editor {
         crossterm::execute!(
             stdout(),
             event::PopKeyboardEnhancementFlags,
-            event::DisableBracketedPaste
+            event::DisableBracketedPaste,
+            event::DisableMouseCapture,
         )
         .unwrap();
         ratatui::restore();
@@ -145,24 +158,30 @@ impl Editor {
             };
 
             if let Some(event) = event {
-                match event {
-                    event::Event::FocusGained => {}
-                    event::Event::FocusLost => {}
-                    event::Event::Key(k) => {
-                        match self.state.get::<&mut InputState>().step(Chord::from(k)) {
-                            Step::Complete(c, _chords) => {
-                                self.state.get::<&mut Flags>().set("input_tree_show", false);
-                                c(&mut self.state)?;
-                            }
-                            Step::Step => {
-                                self.state.get::<&mut Flags>().set("input_tree_show", true)
-                            }
-                            Step::Failed => {
-                                self.state.get::<&mut Flags>().set("input_tree_show", false)
-                            }
-                        };
+                let chord = match event {
+                    event::Event::Key(k) => Some(Chord::from(k)),
+                    event::Event::Mouse(m) => {
+                        self.state.insert(MousePosition {
+                            column: m.column,
+                            row: m.row,
+                        });
+
+                        Chord::try_from(m).ok()
                     }
-                    _ => {}
+                    _ => None,
+                };
+
+                if let Some(chord) = chord {
+                    match self.state.get::<&mut InputState>().step(chord) {
+                        Step::Complete(c, _chords) => {
+                            self.state.get::<&mut Flags>().set("input_tree_show", false);
+                            c(&mut self.state)?;
+                        }
+                        Step::Step => self.state.get::<&mut Flags>().set("input_tree_show", true),
+                        Step::Failed => {
+                            self.state.get::<&mut Flags>().set("input_tree_show", false)
+                        }
+                    };
                 }
             }
 
@@ -185,7 +204,7 @@ impl Editor {
                 // Remove needed states from the storage
                 let bufs = self.state.take::<buffer::Storage>();
                 let mut pipeline = self.state.take::<Pipeline>();
-                let windows = self.state.take::<layout::WindowLayout>();
+                let mut windows = self.state.take::<layout::WindowLayout>();
 
                 windows.render(&bufs, frame, frame.area(), &mut pipeline, &mut self.state);
 

@@ -1,5 +1,7 @@
+use std::ops::Range;
+
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::text::{Line, Span as RSpan};
 use ratatui::widgets::Widget;
 
@@ -19,6 +21,20 @@ pub trait Renderer<S> {
         area: Rect,
         buf: &mut Buffer,
     );
+
+    /// Column within the line for a point inside this renderer's claimed row
+    ///
+    /// Returns None to fall back to one cell per character
+    fn hit_col(
+        &mut self,
+        _state: &mut S,
+        _ctx: &LineCtx,
+        _hl: &Highlight,
+        _area: Rect,
+        _point: Position,
+    ) -> Option<usize> {
+        None
+    }
 }
 
 /// A set of renderers
@@ -61,16 +77,38 @@ impl<S> Renderers<S> {
 
         match winner {
             Some(i) => self.0[i].render(state, ctx, hl, area, buf),
-            None => render_plain(ctx, hl, area, buf),
+            None => render_plain(ctx, hl, &[], area, buf),
         }
+    }
+
+    /// Column within the line for a point inside the row the chain claimed
+    pub fn hit_col(
+        &mut self,
+        state: &mut S,
+        ctx: &LineCtx,
+        hl: &Highlight,
+        area: Rect,
+        point: Position,
+    ) -> Option<usize> {
+        let winner = self
+            .0
+            .iter_mut()
+            .position(|r| r.claim(state, ctx, hl).is_some());
+
+        winner.and_then(|i| self.0[i].hit_col(state, ctx, hl, area, point))
     }
 }
 
-/// Draws a line as plain text
-fn render_plain(ctx: &LineCtx, hl: &Highlight, area: Rect, buf: &mut Buffer) {
+/// Draws a line as plain text, pass "conceals" to hide certain parts of the text
+pub fn render_plain(
+    ctx: &LineCtx,
+    hl: &Highlight,
+    conceal: &[Range<usize>],
+    area: Rect,
+    buf: &mut Buffer,
+) {
     let len = ctx.text.len_chars();
 
-    // An empty line still draws one space so the caret can show on it
     if len == 0 {
         let spans = vec![RSpan::styled(" ".to_owned(), hl.style_at(0))];
 
@@ -82,6 +120,7 @@ fn render_plain(ctx: &LineCtx, hl: &Highlight, area: Rect, buf: &mut Buffer) {
         .spans
         .iter()
         .flat_map(|span| [span.range.start, span.range.end])
+        .chain(conceal.iter().flat_map(|range| [range.start, range.end]))
         .collect();
 
     points.push(0);
@@ -98,8 +137,21 @@ fn render_plain(ctx: &LineCtx, hl: &Highlight, area: Rect, buf: &mut Buffer) {
             continue;
         }
 
+        if conceal
+            .iter()
+            .any(|range| range.start <= start && end <= range.end)
+        {
+            continue;
+        }
+
         let text = ctx.text.slice(start..end).to_string().replace("\n", " ");
         spans.push(RSpan::styled(text, hl.style_at(start)));
+    }
+
+    let line_start = ctx.rope.line_to_char(ctx.line);
+    let at_true_eof = line_start + len == ctx.rope.len_chars();
+    if at_true_eof && hl.spans.iter().any(|span| span.range.start == len) {
+        spans.push(RSpan::styled(" ".to_owned(), hl.style_at(len)));
     }
 
     Line::from(spans).render(area, buf);
@@ -183,12 +235,51 @@ mod test {
         let area = Rect::new(0, 0, 5, 1);
         let mut buf = Buffer::empty(area);
 
-        render_plain(&line_ctx, &hl, area, &mut buf);
+        render_plain(&line_ctx, &hl, &[], area, &mut buf);
 
         assert_eq!(buf[(0, 0)].symbol(), "h");
         assert_eq!(buf[(0, 0)].style().fg, Some(ratatui::style::Color::Red));
         assert_eq!(buf[(2, 0)].symbol(), "l");
         assert_eq!(buf[(2, 0)].style().fg, Some(ratatui::style::Color::Reset));
+    }
+
+    #[test]
+    fn virtual_eof_span_renders_as_trailing_space() {
+        let rope = Rope::from_str("abc");
+        let line_ctx = ctx(&rope);
+        let hl = Highlight::plain(vec![StyleSpan {
+            range: 3..4,
+            style: Style::new().bg(ratatui::style::Color::Green),
+        }]);
+
+        let area = Rect::new(0, 0, 4, 1);
+        let mut buf = Buffer::empty(area);
+
+        render_plain(&line_ctx, &hl, &[], area, &mut buf);
+
+        assert_eq!(buf[(2, 0)].symbol(), "c");
+        assert_eq!(buf[(3, 0)].symbol(), " ");
+        assert_eq!(buf[(3, 0)].style().bg, Some(ratatui::style::Color::Green));
+    }
+
+    #[test]
+    fn conceal_ranges_hide_text() {
+        let rope = Rope::from_str("**bold**");
+        let line_ctx = ctx(&rope);
+        let hl = Highlight::plain(vec![StyleSpan {
+            range: 2..6,
+            style: Style::new().fg(ratatui::style::Color::Red),
+        }]);
+
+        let area = Rect::new(0, 0, 8, 1);
+        let mut buf = Buffer::empty(area);
+
+        render_plain(&line_ctx, &hl, &[0..2, 6..8], area, &mut buf);
+
+        assert_eq!(buf[(0, 0)].symbol(), "b");
+        assert_eq!(buf[(0, 0)].style().fg, Some(ratatui::style::Color::Red));
+        assert_eq!(buf[(3, 0)].symbol(), "d");
+        assert_eq!(buf[(4, 0)].symbol(), " ");
     }
 
     #[test]
@@ -209,7 +300,7 @@ mod test {
         let area = Rect::new(0, 0, 5, 1);
         let mut buf = Buffer::empty(area);
 
-        render_plain(&line_ctx, &hl, area, &mut buf);
+        render_plain(&line_ctx, &hl, &[], area, &mut buf);
 
         assert_eq!(buf[(0, 0)].style().fg, Some(ratatui::style::Color::Red));
         assert_eq!(buf[(1, 0)].style().fg, Some(ratatui::style::Color::Blue));
