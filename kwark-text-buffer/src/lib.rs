@@ -39,6 +39,17 @@ impl BufferEntry {
         })
     }
 
+    pub fn save(&self, path: Option<PathBuf>) -> Result<()> {
+        let writer = match self.kind.clone() {
+            BufferKind::Scratch(n) => std::fs::File::create_new(path.unwrap_or(n.into()))?,
+            BufferKind::File(p) => std::fs::File::create(path.unwrap_or(p))?,
+        };
+
+        self.buffer.write(writer)?;
+
+        Ok(())
+    }
+
     /// Retrieves the kind of the buffer from it's entry
     pub fn kind(&self) -> &BufferKind {
         &self.kind

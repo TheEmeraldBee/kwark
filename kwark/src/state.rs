@@ -13,7 +13,7 @@ use crate::events::EventStorage;
 pub type CallbackFn = Box<dyn FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static>;
 
 pub enum Callback {
-    Event(TypeId, Box<dyn Any>),
+    Event(TypeId, Box<dyn Any + Send + Sync + 'static>),
     Func(CallbackFn),
 }
 
@@ -96,17 +96,18 @@ impl Editor {
 }
 
 /// A type used to send Callbacks through mpsc
+#[derive(Clone)]
 pub struct CallbackSender(Sender<Callback>);
 
 impl CallbackSender {
     pub fn send_fn(
         &mut self,
-        func: impl FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static,
+        func: impl FnOnce(&mut Editor) -> anyhow::Result<()> + Send + Sync + 'static,
     ) {
         let _ = self.0.send(Callback::Func(Box::new(func)));
     }
 
-    pub fn send_event<T: Any + 'static>(&mut self, data: T) {
+    pub fn send_event<T: Any + Send + Sync + 'static>(&mut self, data: T) {
         let _ = self
             .0
             .send(Callback::Event(TypeId::of::<T>(), Box::new(data)));
@@ -182,8 +183,7 @@ impl State {
         CallbackSender(self.callback_tx.clone())
     }
 
-    /// Removes one or more types from the state, returning a guard that puts
-    /// them back when dropped
+    /// Removes one or more types from the state, returning a guard that puts them back
     pub fn scope<T: PutBack>(&mut self) -> Taken<'_, T> {
         let value = T::take_all(self);
         Taken {

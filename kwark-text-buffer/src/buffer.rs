@@ -139,6 +139,13 @@ impl Buffer {
         })
     }
 
+    /// Write the inner contents to the file
+    pub fn write<W: std::io::Write>(&self, writer: W) -> Result<()> {
+        self.rope.write_to(writer)?;
+
+        Ok(())
+    }
+
     /// Returns a reference to the inner buffer for retrieving text
     pub fn rope(&self) -> &ropey::Rope {
         &self.rope

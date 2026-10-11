@@ -17,12 +17,15 @@ use ratatui::{
 };
 
 pub mod prelude {
+    pub use crate::Editor;
     pub use crate::Flags;
     pub use crate::InputState;
     pub use crate::InputTree;
     pub use crate::MousePosition;
     pub use crate::Running;
     pub use crate::State;
+
+    pub use crate::commands::{ArgValue, Args, CommandRegistry, Group, InputTreeExt};
 
     pub use crossterm::event::{KeyCode, KeyModifiers};
     pub use kwark_input::{Chord, Code, Step};
@@ -48,9 +51,15 @@ mod state;
 
 pub use state::*;
 
+pub mod commands;
+
+use commands::CommandRegistry;
+
 pub mod events;
 
 pub mod layout;
+
+pub mod plugins;
 
 pub struct Running(pub bool);
 
@@ -111,6 +120,11 @@ pub fn replace<R>(
     res
 }
 
+/// An "installable" set of tooling to add to the editor
+pub trait Plugin {
+    fn register(&self, editor: &mut Editor);
+}
+
 impl Editor {
     pub fn init(&mut self) {
         self.state.insert(buffer::Storage::default());
@@ -120,6 +134,12 @@ impl Editor {
         self.state.insert(Theme::default());
         self.state.insert(layout::WindowLayout::new());
         self.state.insert(MousePosition::default());
+        self.state.insert(CommandRegistry::default());
+    }
+
+    /// Installs a plugin
+    pub fn install(&mut self, plugin: impl Plugin) {
+        plugin.register(self);
     }
 
     pub fn run(mut self) {
@@ -172,16 +192,32 @@ impl Editor {
                 };
 
                 if let Some(chord) = chord {
-                    match self.state.get::<&mut InputState>().step(chord) {
-                        Step::Complete(c, _chords) => {
-                            self.state.get::<&mut Flags>().set("input_tree_show", false);
-                            c(&mut self.state)?;
-                        }
-                        Step::Step => self.state.get::<&mut Flags>().set("input_tree_show", true),
-                        Step::Failed => {
-                            self.state.get::<&mut Flags>().set("input_tree_show", false)
-                        }
+                    let mut e = events::Input {
+                        chord,
+                        block: false,
                     };
+
+                    self.events.handle(&mut self.state, &mut e)?;
+
+                    // Allow the highest level to block input state
+                    if !e.block {
+                        match self.state.get::<&mut InputState>().step(chord) {
+                            Step::Complete(c, _chords) => {
+                                self.state.get::<&mut Flags>().set("input_tree_show", false);
+                                c(&mut self.state)?;
+                            }
+                            Step::Step => {
+                                self.state.get::<&mut Flags>().set("input_tree_show", true)
+                            }
+                            Step::Failed => {
+                                self.state.get::<&mut Flags>().set("input_tree_show", false);
+
+                                // Nothing happened, so handle the remaining tooling
+                                self.events
+                                    .handle(&mut self.state, &mut events::ExtraInput { chord })?;
+                            }
+                        };
+                    }
                 }
             }
 

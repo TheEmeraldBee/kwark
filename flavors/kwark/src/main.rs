@@ -4,12 +4,15 @@ use std::{
 };
 
 pub use kwark::prelude::*;
-use kwark::prelude::{
-    buffer::Storage,
-    text_buffer::{BoundCursorSet, BufferEntry, CursorOptions, CursorSet},
-    tree_sitter::LanguageStore,
+use kwark::{
+    plugins::{self, cursor_overrides::CursorOverrides},
+    prelude::{
+        buffer::Storage,
+        text_buffer::{BoundCursorSet, BufferEntry, CursorOptions, CursorSet},
+        tree_sitter::LanguageStore,
+    },
 };
-use ratatui::layout::{Direction, Position};
+use ratatui::layout::Position;
 
 mod highlighters;
 mod theme;
@@ -29,43 +32,6 @@ fn commit_changes(state: &mut State) {
     };
 
     buf.commit_change();
-}
-
-fn create_move_cursor(
-    lines: isize,
-    columns: isize,
-    options: CursorOptions,
-) -> impl Fn(&mut State) -> anyhow::Result<()> {
-    move |s: &mut State| {
-        let opts = s.get::<&CursorOptions>().join(options);
-
-        let Some(mut buf) = active_buffer(s) else {
-            return Ok(());
-        };
-
-        buf.move_(lines, columns, &opts);
-
-        Ok(())
-    }
-}
-
-fn bind_movement(
-    tree: &mut InputTree,
-    options: CursorOptions,
-    left: &str,
-    right: &str,
-    up: &str,
-    down: &str,
-) -> anyhow::Result<()> {
-    tree.bind(&[left], "", create_move_cursor(0, -1, options))?;
-
-    tree.bind(&[right], "", create_move_cursor(0, 1, options))?;
-
-    tree.bind(&[up], "", create_move_cursor(-1, 0, options))?;
-
-    tree.bind(&[down], "", create_move_cursor(1, 0, options))?;
-
-    Ok(())
 }
 
 fn buffer_len_lines(storage: &buffer::Storage, id: &buffer::ID) -> usize {
@@ -105,22 +71,21 @@ fn create_scroll(delta: isize) -> impl Fn(&mut State) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    // Initialize the editor
     let mut editor = kwark::init();
 
     editor.insert(LanguageStore::new("./queries".into())?);
-    editor.insert(CursorOptions::new());
 
-    // Retrieve the input state from the editor
+    plugins::visual::init(&mut editor);
+
+    // Each plugin seeds the state its own commands need
+    editor.install(plugins::movement::Plugin);
+    editor.install(plugins::insert::Plugin);
+    editor.install(plugins::window::Plugin);
+
     let input = editor.get::<&mut InputState>();
 
-    // Bind a ton of normal-mode keybinds
     {
         let normal = input.tree("normal");
-
-        normal.desc(&["space"], "General Actions")?;
-
-        normal.desc(&["space", "f"], "File Pickers")?;
 
         normal.bind(&["ctrl-d"], "Scroll Down", |s| {
             let leaf = s.get::<&WindowLayout>().active_id();
@@ -138,289 +103,139 @@ fn main() -> anyhow::Result<()> {
 
         normal.bind(&["scroll_down"], "", create_scroll(3))?;
 
-        normal.bind(&["mouse_1"], "", |s| {
-            let pos = *s.get::<&MousePosition>();
-            let point = Position::new(pos.column, pos.row);
+        normal.group(&["space"], "General Actions", |g| {
+            g.group(&["f"], "File Pickers", |g| {
+                g.bind(&["f"], "Open FZF file picker", |s| {
+                    let value = replace_term(s.sender(), || {
+                        let out = String::from_utf8_lossy(
+                            &Command::new("sh")
+                                .args(["-c", "find \"$PWD\" -type f | fzf"])
+                                .stdout(Stdio::piped())
+                                .spawn()?
+                                .wait_with_output()?
+                                .stdout,
+                        )
+                        .to_string();
 
-            let mut taken = s.scope::<(buffer::Storage, Pipeline, WindowLayout)>();
-            let ((storage, pipeline, windows), state) = taken.split();
+                        if out.trim().is_empty() {
+                            return Ok(None);
+                        }
 
-            if let Some((leaf, id, hit)) = windows.hit_test(storage, pipeline, state, point) {
-                windows.focus(leaf);
-                windows.active_mut().select(id.clone());
+                        Ok(Some(out.trim().to_string()))
+                    })?;
 
-                if let Some(mut buf) = storage.get_mut(&id).and_then(|b| b.as_text()) {
-                    buf.set(hit.line, hit.col, &CursorOptions::new());
-                }
-            }
+                    if let Some(path) = value {
+                        let (layout, storage) =
+                            s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
 
-            Ok(())
-        })?;
+                        let buf = BufferEntry::new_file(path.into())?;
+                        let id = storage.insert(buffer::Buffer::Text {
+                            id: buf.kind().clone(),
+                            buf: Box::new(buf),
+                            cursors: Box::new(CursorSet::new()),
+                            tree: None,
+                            parsed_version: 0,
+                        });
 
-        normal.bind(&["space", "f", "f"], "Open FZF file picker", |s| {
-            let value = replace_term(s.sender(), || {
-                let out = String::from_utf8_lossy(
-                    &Command::new("sh")
-                        .args(["-c", "find \"$PWD\" -type f | fzf"])
-                        .stdout(Stdio::piped())
-                        .spawn()?
-                        .wait_with_output()?
-                        .stdout,
-                )
-                .to_string();
+                        layout.active_mut().select(id);
+                    }
 
-                if out.trim().is_empty() {
-                    return Ok(None);
-                }
+                    Ok(())
+                })?;
 
-                Ok(Some(out.trim().to_string()))
-            })?;
+                g.bind(&["t"], "Open YAZI file picker", |s| {
+                    let value = replace_term(s.sender(), || {
+                        Command::new("yazi")
+                            .args(["--chooser-file", "/tmp/chooser"])
+                            .spawn()?
+                            .wait()?;
 
-            if let Some(path) = value {
-                let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
+                        let lines = std::fs::read_to_string("/tmp/chooser")?
+                            .split("\n")
+                            .filter_map(|x| {
+                                let out = x.trim().to_string();
+                                if out.is_empty() { None } else { Some(out) }
+                            })
+                            .collect::<Vec<_>>();
 
-                let buf = BufferEntry::new_file(path.into())?;
-                let id = storage.insert(buffer::Buffer::Text {
-                    id: buf.kind().clone(),
-                    buf: Box::new(buf),
-                    cursors: Box::new(CursorSet::new()),
-                    tree: None,
-                    parsed_version: 0,
-                });
+                        Ok(lines)
+                    })?;
 
-                layout.active_mut().select(id);
-            }
+                    let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
 
-            Ok(())
-        })?;
+                    for file in value {
+                        let path = PathBuf::from(file).canonicalize()?;
+                        if !path.is_file() {
+                            continue;
+                        }
 
-        normal.bind(&["space", "f", "t"], "Open YAZI file picker", |s| {
-            let value = replace_term(s.sender(), || {
-                Command::new("yazi")
-                    .args(["--chooser-file", "/tmp/chooser"])
-                    .spawn()?
-                    .wait()?;
+                        let buf = BufferEntry::new_file(path)?;
+                        let id = storage.insert(buffer::Buffer::Text {
+                            id: buf.kind().clone(),
+                            buf: Box::new(buf),
+                            cursors: Box::new(CursorSet::new()),
+                            tree: None,
+                            parsed_version: 0,
+                        });
 
-                let lines = std::fs::read_to_string("/tmp/chooser")?
-                    .split("\n")
-                    .filter_map(|x| {
-                        let out = x.trim().to_string();
-                        if out.is_empty() { None } else { Some(out) }
-                    })
-                    .collect::<Vec<_>>();
+                        layout.active_mut().select(id);
+                    }
 
-                Ok(lines)
-            })?;
+                    Ok(())
+                })?;
 
-            let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
-
-            for file in value {
-                let path = PathBuf::from(file).canonicalize()?;
-                if !path.is_file() {
-                    continue;
-                }
-
-                let buf = BufferEntry::new_file(path)?;
-                let id = storage.insert(buffer::Buffer::Text {
-                    id: buf.kind().clone(),
-                    buf: Box::new(buf),
-                    cursors: Box::new(CursorSet::new()),
-                    tree: None,
-                    parsed_version: 0,
-                });
-
-                layout.active_mut().select(id);
-            }
-
-            Ok(())
-        })?;
-
-        bind_movement(
-            normal,
-            CursorOptions::default().wrap(true),
-            "h",
-            "l",
-            "k",
-            "j",
-        )?;
-
-        bind_movement(
-            normal,
-            CursorOptions::default().wrap(true),
-            "left",
-            "right",
-            "up",
-            "down",
-        )?;
-
-        normal.bind(&["g", "p"], "Goto Previous Buffer in Window", |s| {
-            let layout = s.get::<&mut WindowLayout>();
-
-            layout.active_mut().move_primary(-1);
-
-            Ok(())
-        })?;
-
-        normal.bind(&["g", "n"], "Goto Next Buffer in Window", |s| {
-            let layout = s.get::<&mut WindowLayout>();
-
-            layout.active_mut().move_primary(1);
-
-            Ok(())
-        })?;
-
-        normal.desc(&[";"], "Shortcut Menu")?;
-
-        normal.bind(&[";", "Q"], "Quit the Editor", |s| {
-            s.get::<&mut Running>().quit();
-
-            Ok(())
-        })?;
-
-        normal.bind(&[";", "n"], "Split window right", |s| {
-            let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
-
-            layout.split(Direction::Horizontal);
-
-            const NAME_ROOT: &str = "scratch";
-
-            let mut num = 0;
-
-            while storage
-                .get(&buffer::ID::scratch(format!("{}_{}", NAME_ROOT, num)))
-                .is_some()
-            {
-                num += 1;
-            }
-
-            let buf_name = format!("{}_{}", NAME_ROOT, num);
-
-            let buf = BufferEntry::new_scratch(buf_name);
-            let id = storage.insert(buf);
-            layout.active_mut().select(id);
-
-            Ok(())
-        })?;
-
-        normal.bind(&[";", "N"], "Split window down", |s| {
-            let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
-
-            layout.split(Direction::Vertical);
-
-            const NAME_ROOT: &str = "scratch";
-
-            let mut num = 0;
-
-            while storage
-                .get(&buffer::ID::scratch(format!("{}_{}", NAME_ROOT, num)))
-                .is_some()
-            {
-                num += 1;
-            }
-
-            let buf_name = format!("{}_{}", NAME_ROOT, num);
-
-            let buf = BufferEntry::new_scratch(buf_name);
-            let id = storage.insert(buf);
-            layout.active_mut().select(id);
-
-            Ok(())
-        })?;
-
-        normal.bind(
-            &[";", "q"],
-            "Close active buffer (closes the window if it was the last buffer in the window)",
-            |s| {
-                let windows = s.get::<&mut WindowLayout>();
-                windows.active_mut().close_primary();
-                if windows.active_mut().is_empty() {
-                    let active = windows.active_id();
-                    windows.close(active);
-                }
                 Ok(())
-            },
+            })
+        })?;
+
+        normal.group(&["g"], "Goto Prefix", |g| {
+            g.bind_cmd(&["p"], "Goto Previous Buffer in Window", "buffer dir=prev")?;
+            g.bind_cmd(&["n"], "Goto Next Buffer in Window", "buffer dir=next")?;
+            Ok(())
+        })?;
+
+        normal.group(&[";"], "Shortcut Menu", |g| {
+            g.bind_cmd(&["Q"], "Quit the Editor", "quit")?;
+            g.bind_cmd(&["n"], "Split window right", "split dir=right")?;
+            g.bind_cmd(&["N"], "Split window down", "split dir=down")?;
+            g.bind_cmd(
+                &["q"],
+                "Close active buffer (closes the window if it was the last buffer in the window)",
+                "close_buffer",
+            )?;
+            Ok(())
+        })?;
+
+        // alt-h is one chord, not a sequence, so it stays flat rather than nested
+        normal.bind_cmd(&["alt-h"], "Focus window left", "focus dir=left")?;
+        normal.bind_cmd(&["alt-l"], "Focus window right", "focus dir=right")?;
+        normal.bind_cmd(&["alt-k"], "Focus window up", "focus dir=up")?;
+        normal.bind_cmd(&["alt-j"], "Focus window down", "focus dir=down")?;
+        normal.bind_cmd(
+            &["alt-H"],
+            "Move border left",
+            "resize dir=left amount=0.05",
+        )?;
+        normal.bind_cmd(
+            &["alt-L"],
+            "Move border right",
+            "resize dir=right amount=0.05",
+        )?;
+        normal.bind_cmd(&["alt-K"], "Move border up", "resize dir=up amount=0.05")?;
+        normal.bind_cmd(
+            &["alt-J"],
+            "Move border down",
+            "resize dir=down amount=0.05",
         )?;
 
-        normal.bind(&["alt-h"], "Focus window left", |s| {
-            s.get::<&mut WindowLayout>()
-                .focus_direction(Direction::Horizontal, false);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-l"], "Focus window right", |s| {
-            s.get::<&mut WindowLayout>()
-                .focus_direction(Direction::Horizontal, true);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-k"], "Focus window up", |s| {
-            s.get::<&mut WindowLayout>()
-                .focus_direction(Direction::Vertical, false);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-j"], "Focus window down", |s| {
-            s.get::<&mut WindowLayout>()
-                .focus_direction(Direction::Vertical, true);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-H"], "Move border left", |s| {
-            s.get::<&mut WindowLayout>()
-                .resize(Direction::Horizontal, -0.05);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-L"], "Move border right", |s| {
-            s.get::<&mut WindowLayout>()
-                .resize(Direction::Horizontal, 0.05);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-K"], "Move border up", |s| {
-            s.get::<&mut WindowLayout>()
-                .resize(Direction::Vertical, -0.05);
-            Ok(())
-        })?;
-
-        normal.bind(&["alt-J"], "Move border down", |s| {
-            s.get::<&mut WindowLayout>()
-                .resize(Direction::Vertical, 0.05);
-            Ok(())
-        })?;
-
-        normal.bind(&["u"], "Undo", |s| {
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.undo();
-
-            Ok(())
-        })?;
-
-        normal.bind(&["U"], "Redo", |s| {
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.redo();
-
-            Ok(())
-        })?;
+        normal.bind_cmd(&["u"], "Undo", "undo")?;
+        normal.bind_cmd(&["U"], "Redo", "redo")?;
+        normal.bind_cmd(&["c"], "Toggle All-Cursor Mode", "toggle_all_cursors")?;
 
         normal.bind(&["i"], "Enter Insert Mode", |s| {
             s.get::<&mut InputState>().set_mode("insert");
 
             commit_changes(s);
-
-            Ok(())
-        })?;
-
-        normal.bind(&["c"], "Toggle All-Cursor Mode", |s| {
-            let options = s.get::<&mut CursorOptions>();
-
-            *options = options.all(!options.is_all());
 
             Ok(())
         })?;
@@ -482,22 +297,22 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        bind_movement(
-            normal,
-            CursorOptions::new().extend(true).wrap(true),
-            "shift-left",
-            "shift-right",
-            "shift-up",
-            "shift-down",
-        )?;
+        plugins::movement::bind_hjkl(normal, &[], "", CursorOverrides::new().wrap(true), false)?;
+        plugins::movement::bind_arrows(normal, &[], "", CursorOverrides::new().wrap(true), false)?;
 
-        bind_movement(
+        plugins::movement::bind_hjkl(
             normal,
-            CursorOptions::new().extend(true).wrap(true),
-            "H",
-            "L",
-            "K",
-            "J",
+            &[],
+            "shift",
+            CursorOverrides::new().wrap(true).extend(true),
+            false,
+        )?;
+        plugins::movement::bind_arrows(
+            normal,
+            &[],
+            "shift",
+            CursorOverrides::new().wrap(true).extend(true),
+            false,
         )?;
 
         normal.bind(&["?"], "Show layer inputs", |s| {
@@ -506,26 +321,16 @@ fn main() -> anyhow::Result<()> {
         })?;
     }
 
-    // Bind a bunch of insert mode keybinds
     {
         let insert = input.tree("insert");
 
-        bind_movement(
+        plugins::movement::bind_arrows(insert, &[], "", CursorOverrides::new().wrap(true), false)?;
+        plugins::movement::bind_arrows(
             insert,
-            CursorOptions::new().extend(true).wrap(true),
-            "left",
-            "right",
-            "up",
-            "down",
-        )?;
-
-        bind_movement(
-            insert,
-            CursorOptions::new().extend(true).wrap(true),
-            "shift-left",
-            "shift-right",
-            "shift-up",
-            "shift-down",
+            &[],
+            "shift",
+            CursorOverrides::new().extend(true).wrap(true),
+            false,
         )?;
 
         insert.bind(&["escape"], "Switch to Normal mode", |s| {
@@ -536,70 +341,9 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        insert.bind(&["backspace"], "Delete Char", |s| {
-            let opts = *s.get::<&CursorOptions>();
+        insert.bind_cmd(&["backspace"], "Delete Char", "delete before=true")?;
 
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.move_(0, -1, &opts.wrap(true).extend(true));
-            buf.delete(&opts);
-
-            Ok(())
-        })?;
-
-        insert.bind(&["enter"], "Insert Newline", |s| {
-            let opts = *s.get::<&CursorOptions>();
-
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.insert("\n", &opts);
-
-            Ok(())
-        })?;
-
-        insert.bind(&["space"], "Insert Space", |s| {
-            let opts = *s.get::<&CursorOptions>();
-
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.insert(" ", &opts);
-
-            Ok(())
-        })?;
-
-        insert.set_backup(
-            |s, chord| {
-                let opts = *s.get::<&CursorOptions>();
-
-                let Some(mut buf) = active_buffer(s) else {
-                    return Ok(());
-                };
-
-                // Don't handle anything other than shift
-                if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
-                    return Ok(());
-                }
-
-                let key_string = match chord.code {
-                    Code::Key(KeyCode::Char(c)) => match chord.mods.contains(KeyModifiers::SHIFT) {
-                        false => c.to_string(),
-                        true => c.to_ascii_uppercase().to_string(),
-                    },
-                    _ => return Ok(()),
-                };
-
-                buf.insert(key_string.as_str(), &opts);
-
-                Ok(())
-            },
-            "Insert Pressed",
-        );
+        plugins::insert::bind_insert(insert, Vec::<&str>::new(), CursorOverrides::new())?;
     }
 
     let (layout, storage) = editor.get::<(&mut WindowLayout, &mut Storage)>();
@@ -619,11 +363,9 @@ fn main() -> anyhow::Result<()> {
     {
         let pipeline = editor.get::<&mut Pipeline>();
 
-        // Highlighters
         pipeline.highlighters.push(TSHighlighter);
         pipeline.highlighters.push(CursorHighlighter);
 
-        // Renderers
         pipeline
             .renderers
             .push(HeaderRenderer::new().block::<CursorTag>());
@@ -631,10 +373,8 @@ fn main() -> anyhow::Result<()> {
 
     theme::init_theme(&mut editor);
 
-    // Run the actual editor
     editor.run();
 
-    // Print your goodbyes
     println!("Goodbye from `kwark`");
 
     Ok(())

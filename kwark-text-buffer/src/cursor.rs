@@ -8,7 +8,7 @@ fn shift_clamped(buffer: &Buffer, pivot: usize, pos: usize, distance: isize) -> 
 }
 
 /// A set of options that, when interacting with a cursor, should activate
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct CursorOptions {
     /// Whether, when the cursor moves, to extend the selection
     pub extend: bool,
@@ -276,8 +276,7 @@ impl CursorSet {
                     desired_col = buf.char_to_line_col(shifted).1;
                     shifted
                 } else {
-                    let col =
-                        (display_col as isize + columns).clamp(0, max_col as isize) as usize;
+                    let col = (display_col as isize + columns).clamp(0, max_col as isize) as usize;
                     desired_col = col;
                     buf.line_col_to_char(target_line, col)
                 }
