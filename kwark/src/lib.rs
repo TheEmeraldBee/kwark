@@ -207,6 +207,16 @@ impl Editor {
                             row: m.row,
                         });
 
+                        match m.kind {
+                            event::MouseEventKind::Drag(event::MouseButton::Left) => {
+                                self.events.handle(&mut self.state, &mut events::MouseDrag)?;
+                            }
+                            event::MouseEventKind::Up(event::MouseButton::Left) => {
+                                self.events.handle(&mut self.state, &mut events::MouseUp)?;
+                            }
+                            _ => {}
+                        }
+
                         Chord::try_from(m).ok()
                     }
                     _ => None,
