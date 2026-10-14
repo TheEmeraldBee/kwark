@@ -22,6 +22,7 @@ pub fn init_theme(state: &mut State) {
     const BLUE: Color = Color::from_u32(0x0089B4FA);
     const LAVENDER: Color = Color::from_u32(0x00B4BEFE);
     const TEXT: Color = Color::from_u32(0x00CDD6F4);
+    const TEXT_DARK: Color = Color::from_u32(0x00333654);
     const OVERLAY2: Color = Color::from_u32(0x009399B2);
 
     theme.set_all([
@@ -66,5 +67,17 @@ pub fn init_theme(state: &mut State) {
         ("ts.markup.quote", f(PINK)),
         ("ts.markup.link.url", f(BLUE).italic().underlined()),
         ("ts.markup.link.text", f(LAVENDER)),
+    ]);
+
+    theme.set_all([
+        ("gutter", f(OVERLAY2)),
+        ("bar.window.selected", f(GREEN)),
+        ("bar.tab", f(TEXT)),
+        ("bar.tab.primary", f(MAUVE)),
+        ("bar.clock", f(PINK)),
+        ("borders.active", f(GREEN)),
+        ("borders", f(OVERLAY2)),
+        ("mode.normal", f(TEXT_DARK).bg(TEAL)),
+        ("mode.insert", f(TEXT_DARK).bg(MAUVE)),
     ]);
 }

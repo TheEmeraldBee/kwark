@@ -2,14 +2,16 @@ use kwark_text_buffer::Cursor;
 use kwark_tree_sitter::tree::SyntaxTree;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
+use ratatui::widgets::{Clear, Widget};
 use ropey::Rope;
 
-use crate::{Highlighters, LineCtx, Renderers};
+use crate::{Border, ElementGrid, Gutters, Highlighters, LineCtx, Renderers};
 
 /// A full set of storage for Renderers and Highlighters
 pub struct Pipeline<S> {
     pub highlighters: Highlighters<S>,
     pub renderers: Renderers<S>,
+    pub gutters: Gutters<S>,
 }
 
 impl<S> Default for Pipeline<S> {
@@ -17,6 +19,7 @@ impl<S> Default for Pipeline<S> {
         Self {
             highlighters: Highlighters::default(),
             renderers: Renderers::default(),
+            gutters: Gutters::default(),
         }
     }
 }
@@ -67,6 +70,14 @@ impl<S> Pipeline<S> {
             buf,
         }: RenderArgs<S>,
     ) -> Viewport {
+        let gutter_width = self.gutters.measure();
+        let text_area = Rect {
+            x: area.x + gutter_width,
+            y: area.y,
+            width: area.width.saturating_sub(gutter_width),
+            height: area.height,
+        };
+
         let mut resolved = Vec::new();
         let mut used: u16 = 0;
         let mut line = scroll_top;
@@ -76,7 +87,7 @@ impl<S> Pipeline<S> {
                 rope,
                 line,
                 text: rope.line(line),
-                width: area.width,
+                width: text_area.width,
                 cursors,
                 primary,
                 tree,
@@ -97,11 +108,22 @@ impl<S> Pipeline<S> {
 
         for (ctx, hl, height) in &resolved {
             let row = Rect {
-                x: area.x,
+                x: text_area.x,
                 y,
-                width: area.width,
+                width: text_area.width,
                 height: *height,
             };
+
+            if gutter_width > 0 {
+                let gutter_row = Rect {
+                    x: area.x,
+                    y,
+                    width: gutter_width,
+                    height: *height,
+                };
+                self.gutters
+                    .render(state, ctx, hl, gutter_row, buf, *height);
+            }
 
             self.renderers.render(state, ctx, hl, row, buf);
             y += height;
@@ -131,6 +153,18 @@ impl<S> Pipeline<S> {
             return None;
         }
 
+        let gutter_width = self.gutters.measure();
+        let text_area = Rect {
+            x: area.x + gutter_width,
+            y: area.y,
+            width: area.width.saturating_sub(gutter_width),
+            height: area.height,
+        };
+
+        if point.x < text_area.x {
+            return None;
+        }
+
         let mut used: u16 = 0;
         let mut y = area.y;
         let mut line = scroll_top;
@@ -140,7 +174,7 @@ impl<S> Pipeline<S> {
                 rope,
                 line,
                 text: rope.line(line),
-                width: area.width,
+                width: text_area.width,
                 cursors,
                 primary,
                 tree,
@@ -152,9 +186,9 @@ impl<S> Pipeline<S> {
                 .measure(state, &ctx, &hl)
                 .min(area.height - used);
             let row = Rect {
-                x: area.x,
+                x: text_area.x,
                 y,
-                width: area.width,
+                width: text_area.width,
                 height,
             };
 
@@ -173,5 +207,154 @@ impl<S> Pipeline<S> {
         }
 
         None
+    }
+}
+
+/// Splits `area` into top, middle, and bottom bands of the given heights
+pub fn split_vertically(area: Rect, top: u16, bottom: u16) -> (Rect, Rect, Rect) {
+    let middle = area.height.saturating_sub(top + bottom);
+
+    let top_rect = Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: top,
+    };
+    let middle_rect = Rect {
+        x: area.x,
+        y: area.y + top,
+        width: area.width,
+        height: middle,
+    };
+    let bottom_rect = Rect {
+        x: area.x,
+        y: area.y + top + middle,
+        width: area.width,
+        height: bottom,
+    };
+
+    (top_rect, middle_rect, bottom_rect)
+}
+
+/// Arguments for rendering a single window's
+pub struct WindowRenderArgs<'a, S, C> {
+    pub rope: &'a Rope,
+    pub state: &'a mut S,
+    pub scroll_top: usize,
+    pub cursors: &'a [Cursor],
+    pub primary: usize,
+    pub tree: Option<&'a SyntaxTree>,
+    pub area: Rect,
+    pub buf: &'a mut Buffer,
+    pub ctx: &'a C,
+}
+
+/// A pipeline to run when rendering a window
+pub struct WindowPipeline<S, C> {
+    pub border: Option<Box<dyn Border<S, C>>>,
+    pub top: ElementGrid<S, C>,
+    pub bottom: ElementGrid<S, C>,
+}
+
+impl<S, C> Default for WindowPipeline<S, C> {
+    fn default() -> Self {
+        Self {
+            border: None,
+            top: ElementGrid::default(),
+            bottom: ElementGrid::default(),
+        }
+    }
+}
+
+impl<S, C> WindowPipeline<S, C> {
+    /// Sets the border renderer for the pipeline
+    pub fn set_border(&mut self, border: impl Border<S, C> + 'static) -> &mut Self {
+        self.border = Some(Box::new(border));
+        self
+    }
+
+    /// Removes the border renderer from the pipeline
+    pub fn remove_border(&mut self) -> &mut Self {
+        self.border = None;
+        self
+    }
+
+    /// Draws the window's elements
+    pub fn render(
+        &mut self,
+        content: &mut Pipeline<S>,
+        WindowRenderArgs {
+            rope,
+            state,
+            scroll_top,
+            cursors,
+            primary,
+            tree,
+            area,
+            buf,
+            ctx,
+        }: WindowRenderArgs<S, C>,
+    ) -> Viewport {
+        let inner = match &mut self.border {
+            Some(border) => {
+                let inner = border.render(state, ctx, area, buf);
+                // The border may have styled the whole `area`; clear its own
+                // styling back out of `inner` before anything draws there
+                Clear.render(inner, buf);
+                inner
+            }
+            None => area,
+        };
+
+        let top_h = self.top.height(state, ctx, inner.height);
+        let bottom_h = self
+            .bottom
+            .height(state, ctx, inner.height.saturating_sub(top_h));
+        let (top_rect, content_rect, bottom_rect) = split_vertically(inner, top_h, bottom_h);
+
+        self.top.render(state, ctx, top_rect, buf);
+        self.bottom.render(state, ctx, bottom_rect, buf);
+
+        content.render(RenderArgs {
+            rope,
+            state,
+            scroll_top,
+            cursors,
+            primary,
+            tree,
+            area: content_rect,
+            buf,
+        })
+    }
+}
+
+/// The editor's render pipeline
+pub struct EditorPipeline<S, C> {
+    pub top: ElementGrid<S, C>,
+    pub bottom: ElementGrid<S, C>,
+}
+
+impl<S, C> Default for EditorPipeline<S, C> {
+    fn default() -> Self {
+        Self {
+            top: ElementGrid::default(),
+            bottom: ElementGrid::default(),
+        }
+    }
+}
+
+impl<S, C> EditorPipeline<S, C> {
+    /// Draws the editor's elements, returning what space is available for windows
+    pub fn render(&mut self, state: &mut S, ctx: &C, area: Rect, buf: &mut Buffer) -> Rect {
+        let top_h = self.top.height(state, ctx, area.height);
+        let bottom_h = self
+            .bottom
+            .height(state, ctx, area.height.saturating_sub(top_h));
+        let (top_rect, grid_rect, bottom_rect) = split_vertically(area, top_h, bottom_h);
+
+        self.top.render(state, ctx, top_rect, buf);
+        self.bottom.render(state, ctx, bottom_rect, buf);
+
+        grid_rect
     }
 }

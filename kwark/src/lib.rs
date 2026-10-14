@@ -37,15 +37,21 @@ pub mod prelude {
 
     pub use kwark_tree_sitter::prelude as tree_sitter;
 
+    pub use crate::EditorPipeline;
     pub use crate::Pipeline;
+    pub use crate::WindowPipeline;
 
-    pub use crate::layout::{LeafId, Window, WindowLayout};
+    pub use crate::layout::{LeafId, Window, WindowCtx, WindowLayout};
 
     pub use crate::replace as replace_term;
+
+    pub use crate::pipelines;
 }
 
 use kwark_buffer as buffer;
 pub type Pipeline = kwark_text_buffer_renderer::Pipeline<State>;
+pub type WindowPipeline = kwark_text_buffer_renderer::WindowPipeline<State, layout::WindowCtx>;
+pub type EditorPipeline = kwark_text_buffer_renderer::EditorPipeline<State, ()>;
 
 mod state;
 
@@ -60,6 +66,8 @@ pub mod events;
 pub mod layout;
 
 pub mod plugins;
+
+pub mod pipelines;
 
 pub struct Running(pub bool);
 
@@ -129,6 +137,8 @@ impl Editor {
     pub fn init(&mut self) {
         self.state.insert(buffer::Storage::default());
         self.state.insert(Pipeline::default());
+        self.state.insert(EditorPipeline::default());
+        self.state.insert(WindowPipeline::default());
         self.state.insert(InputState::new("normal"));
         self.state.insert(Running(true));
         self.state.insert(Theme::default());
@@ -172,12 +182,23 @@ impl Editor {
 
     fn run_inner(&mut self) -> anyhow::Result<()> {
         while self.state.get::<&Running>().0 {
-            let event = match crossterm::event::poll(Duration::from_millis(50))? {
-                true => Some(crossterm::event::read()?),
-                false => None,
+            // Force minimum of 60 fps
+            std::thread::sleep(Duration::from_secs_f32(1.0 / 60.0));
+
+            // Collect all events
+            let events = match crossterm::event::poll(Duration::from_millis(150))? {
+                true => {
+                    let mut out = vec![crossterm::event::read()?];
+                    while crossterm::event::poll(Duration::ZERO)? {
+                        out.push(crossterm::event::read()?);
+                    }
+                    out
+                }
+                false => vec![],
             };
 
-            if let Some(event) = event {
+            // Handle all events
+            for event in events {
                 let chord = match event {
                     event::Event::Key(k) => Some(Chord::from(k)),
                     event::Event::Mouse(m) => {
@@ -240,14 +261,28 @@ impl Editor {
                 // Remove needed states from the storage
                 let bufs = self.state.take::<buffer::Storage>();
                 let mut pipeline = self.state.take::<Pipeline>();
+                let mut window_pipeline = self.state.take::<WindowPipeline>();
                 let mut windows = self.state.take::<layout::WindowLayout>();
+                let mut editor_pipeline = self.state.take::<EditorPipeline>();
 
-                windows.render(&bufs, frame, frame.area(), &mut pipeline, &mut self.state);
+                let grid_rect =
+                    editor_pipeline.render(&mut self.state, &(), frame.area(), frame.buffer_mut());
+
+                windows.render(
+                    &bufs,
+                    frame,
+                    grid_rect,
+                    &mut pipeline,
+                    &mut window_pipeline,
+                    &mut self.state,
+                );
 
                 // Re-insert the states
                 self.state.insert(bufs);
                 self.state.insert(pipeline);
+                self.state.insert(window_pipeline);
                 self.state.insert(windows);
+                self.state.insert(editor_pipeline);
 
                 let (state, flags) = self.state.get::<(&InputState, &Flags)>();
                 if flags.get("input_tree_show") {

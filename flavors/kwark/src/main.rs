@@ -363,12 +363,43 @@ fn main() -> anyhow::Result<()> {
     {
         let pipeline = editor.get::<&mut Pipeline>();
 
-        pipeline.highlighters.push(TSHighlighter);
-        pipeline.highlighters.push(CursorHighlighter);
+        pipeline
+            .highlighters
+            .push(TSHighlighter)
+            .push(CursorHighlighter);
 
         pipeline
             .renderers
             .push(HeaderRenderer::new().block::<CursorTag>());
+
+        pipeline
+            .gutters
+            .push(pipelines::gutters::Gap(1))
+            .push(pipelines::gutters::LineNumber {
+                relative: true,
+                ..Default::default()
+            })
+            .push(pipelines::gutters::Gap(1))
+            .push(pipelines::gutters::VerticalBar);
+    }
+    {
+        let window_pipeline = editor.get::<&mut WindowPipeline>();
+
+        window_pipeline
+            .top
+            .push_row(|e| e.push_center(pipelines::bar::Tabs));
+
+        window_pipeline.set_border(pipelines::borders::SimpleBorders);
+    }
+    {
+        let editor_pipeline = editor.get::<&mut EditorPipeline>();
+
+        editor_pipeline.bottom.push_row(|e| {
+            e.push_left(pipelines::bar::Gap(2))
+                .push_left(pipelines::bar::Mode)
+                .push_right(pipelines::bar::Gap(2))
+                .push_right(pipelines::bar::Clock::new("%I:%m %P"))
+        });
     }
 
     theme::init_theme(&mut editor);
