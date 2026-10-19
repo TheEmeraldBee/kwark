@@ -1,6 +1,6 @@
 [workspace]
-members = ["flavors/*", "kwark", "kwark-text-buffer", "kwark-text-buffer-renderer", "kwark-input", "kwark-buffer", "kwark-tree-sitter", "kwark-theme"]
 resolver = "3"
+members = ["flavors/*", "kwark", "kwark-buffer", "kwark-input", "kwark-text-buffer", "kwark-text-buffer-renderer", "kwark-theme", "kwark-tree-sitter"]
 
 [workspace.package]
 version = "0.0.0"
@@ -8,17 +8,23 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-kwark-buffer = { version = "0.0.0", path = "./kwark-buffer" }
-kwark-text-buffer = { version = "0.0.0", path = "./kwark-text-buffer" }
-kwark-text-buffer-renderer = { version = "0.0.0", path = "./kwark-text-buffer-renderer" }
-kwark-input = { version = "0.0.0", path = "./kwark-input" }
-kwark-tree-sitter = { version = "0.0.0", path = "./kwark-tree-sitter" }
-kwark-theme = { version = "0.0.0", path = "./kwark-theme" }
+kwark-buffer = { path = "./kwark-buffer", version = "0.0.0" }
+kwark-input = { path = "./kwark-input", version = "0.0.0" }
+kwark-text-buffer = { path = "./kwark-text-buffer", version = "0.0.0" }
+kwark-text-buffer-renderer = { path = "./kwark-text-buffer-renderer", version = "0.0.0" }
+kwark-theme = { path = "./kwark-theme", version = "0.0.0" }
+kwark-tree-sitter = { path = "./kwark-tree-sitter", version = "0.0.0" }
 
 # Error Handling
-thiserror = "2.0.18"
+
 anyhow = "1.0.102"
+thiserror = "2.0.18"
 
 # Terminal Rendering
+
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 ratatui = "0.30.2"
+
+# Async
+
+tokio = { version = "1.54.0", features = ["full"] }

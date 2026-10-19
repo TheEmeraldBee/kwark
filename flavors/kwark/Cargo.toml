@@ -9,8 +9,8 @@ name = "kwark"
 path = "src/main.rs"
 
 [dependencies]
-kwark = { version = "0.0.0", path = "../../kwark" }
 anyhow.workspace = true
+kwark = { path = "../../kwark", version = "0.0.0" }
 ratatui.workspace = true
 
 # Tree Sitter languages

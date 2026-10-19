@@ -1,73 +1,39 @@
+mod state;
+
+pub mod commands;
+pub mod events;
+pub mod layout;
+pub mod pipelines;
+pub mod plugins;
+pub mod prelude;
+
+pub use state::*;
+
 use std::{io::stdout, time::Duration};
 
 use crossterm::{
     event,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
-pub use kwark_input::{Chord, Code, Step};
 
-pub type InputState = kwark_input::InputState<State>;
-pub type InputTree = kwark_input::InputTree<State>;
-
+use kwark_buffer as buffer;
 use kwark_theme::Theme;
+
 use ratatui::{
     macros::{horizontal, vertical},
     prelude::*,
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-pub mod prelude {
-    pub use crate::Editor;
-    pub use crate::Flags;
-    pub use crate::InputState;
-    pub use crate::InputTree;
-    pub use crate::MousePosition;
-    pub use crate::Running;
-    pub use crate::State;
+use commands::CommandRegistry;
 
-    pub use crate::commands::{ArgValue, Args, CommandRegistry, Group, InputTreeExt};
+pub use kwark_input::{Chord, Code, Step};
 
-    pub use crossterm::event::{KeyCode, KeyModifiers};
-    pub use kwark_input::{Chord, Code, Step};
-
-    pub use kwark_buffer as buffer;
-    pub use kwark_text_buffer as text_buffer;
-    pub use kwark_text_buffer_renderer as text_render;
-    pub use kwark_theme::Theme;
-
-    pub use kwark_tree_sitter::prelude as tree_sitter;
-
-    pub use crate::EditorPipeline;
-    pub use crate::Pipeline;
-    pub use crate::WindowPipeline;
-
-    pub use crate::layout::{LeafId, Window, WindowCtx, WindowLayout};
-
-    pub use crate::replace as replace_term;
-
-    pub use crate::pipelines;
-}
-
-use kwark_buffer as buffer;
+pub type InputState = kwark_input::InputState<State>;
+pub type InputTree = kwark_input::InputTree<State>;
 pub type Pipeline = kwark_text_buffer_renderer::Pipeline<State>;
 pub type WindowPipeline = kwark_text_buffer_renderer::WindowPipeline<State, layout::WindowCtx>;
 pub type EditorPipeline = kwark_text_buffer_renderer::EditorPipeline<State, ()>;
-
-mod state;
-
-pub use state::*;
-
-pub mod commands;
-
-use commands::CommandRegistry;
-
-pub mod events;
-
-pub mod layout;
-
-pub mod plugins;
-
-pub mod pipelines;
 
 pub struct Running(pub bool);
 
