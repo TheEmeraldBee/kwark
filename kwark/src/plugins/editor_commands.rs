@@ -1,0 +1,44 @@
+use kwark_buffer::Buffer;
+
+use crate::{
+    Running, State,
+    commands::{Args, CommandRegistry},
+    plugins::internal_utils::active_buffer_normal,
+};
+
+pub struct Plugin;
+
+impl crate::Plugin for Plugin {
+    fn register(&self, editor: &mut crate::prelude::Editor) -> anyhow::Result<()> {
+        let registry = editor.get::<&mut CommandRegistry>();
+
+        registry.register("quit", quit);
+        registry.register("q", quit);
+
+        registry.register("write", write);
+
+        Ok(())
+    }
+}
+
+pub fn quit(s: &mut State, _args: &Args) -> anyhow::Result<()> {
+    s.get::<&mut Running>().quit();
+
+    Ok(())
+}
+
+pub fn write(s: &mut State, args: &Args) -> anyhow::Result<()> {
+    let Some(buf) = active_buffer_normal(s) else {
+        return Ok(());
+    };
+
+    let Buffer::Text { buf, .. } = buf else {
+        return Ok(());
+    };
+
+    let filepath = args.get("path", 0).and_then(|x| x.as_str());
+
+    buf.save(filepath.map(|x| x.into()))?;
+
+    Ok(())
+}

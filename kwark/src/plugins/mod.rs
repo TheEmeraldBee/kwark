@@ -16,3 +16,5 @@ pub mod window;
 
 /// A set of commands and systems for interacting with a command line
 pub mod command_line;
+
+pub mod editor_commands;

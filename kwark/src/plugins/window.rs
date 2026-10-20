@@ -106,11 +106,6 @@ impl crate::Plugin for Plugin {
             Ok(())
         });
 
-        registry.register("quit", |s, _| {
-            s.get::<&mut Running>().quit();
-            Ok(())
-        });
-
         Ok(())
     }
 }

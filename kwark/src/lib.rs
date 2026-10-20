@@ -3,6 +3,7 @@ mod state;
 pub mod commands;
 pub mod events;
 pub mod layout;
+pub mod log;
 pub mod pipelines;
 pub mod plugins;
 pub mod prelude;
@@ -28,6 +29,8 @@ use ratatui::{
 use commands::CommandRegistry;
 
 pub use kwark_input::{Chord, Code, Step};
+
+use crate::log::LogState;
 
 pub type InputState = kwark_input::InputState<State>;
 pub type InputTree = kwark_input::InputTree<State>;
@@ -111,6 +114,7 @@ impl Editor {
         self.state.insert(layout::WindowLayout::new());
         self.state.insert(MousePosition::default());
         self.state.insert(CommandRegistry::default());
+        self.state.insert(LogState::default());
     }
 
     /// Installs a plugin
@@ -147,6 +151,8 @@ impl Editor {
     }
 
     fn run_inner(&mut self) -> anyhow::Result<()> {
+        let mut errors = vec![];
+
         while self.state.get::<&Running>().0 {
             // Force minimum of 60 fps
             std::thread::sleep(Duration::from_secs_f32(1.0 / 60.0));
@@ -175,11 +181,18 @@ impl Editor {
 
                         match m.kind {
                             event::MouseEventKind::Drag(event::MouseButton::Left) => {
-                                self.events
-                                    .handle(&mut self.state, &mut events::MouseDrag)?;
+                                if let Err(e) =
+                                    self.events.handle(&mut self.state, &mut events::MouseDrag)
+                                {
+                                    errors.push(e);
+                                }
                             }
                             event::MouseEventKind::Up(event::MouseButton::Left) => {
-                                self.events.handle(&mut self.state, &mut events::MouseUp)?;
+                                if let Err(e) =
+                                    self.events.handle(&mut self.state, &mut events::MouseUp)
+                                {
+                                    errors.push(e);
+                                }
                             }
                             _ => {}
                         }
@@ -195,14 +208,19 @@ impl Editor {
                         block: false,
                     };
 
-                    self.events.handle(&mut self.state, &mut e)?;
+                    if let Err(e) = self.events.handle(&mut self.state, &mut e) {
+                        errors.push(e)
+                    }
 
                     // Allow the highest level to block input state
                     if !e.block {
                         match self.state.get::<&mut InputState>().step(chord) {
                             Step::Complete(c, _chords) => {
                                 self.state.get::<&mut Flags>().set("input_tree_show", false);
-                                c(&mut self.state)?;
+
+                                if let Err(e) = c(&mut self.state) {
+                                    errors.push(e)
+                                }
                             }
                             Step::Step => {
                                 self.state.get::<&mut Flags>().set("input_tree_show", true)
@@ -211,8 +229,12 @@ impl Editor {
                                 self.state.get::<&mut Flags>().set("input_tree_show", false);
 
                                 // Nothing happened, so handle the remaining tooling
-                                self.events
-                                    .handle(&mut self.state, &mut events::ExtraInput { chord })?;
+                                if let Err(e) = self
+                                    .events
+                                    .handle(&mut self.state, &mut events::ExtraInput { chord })
+                                {
+                                    errors.push(e)
+                                }
                             }
                         };
                     }
@@ -287,6 +309,13 @@ impl Editor {
                     );
                 }
             })?;
+
+            for error in errors.drain(..) {
+                if self.has::<LogState>() {
+                    self.get::<&mut LogState>()
+                        .log(error.to_string(), log::Severity::Error)
+                }
+            }
 
             self.set_term(term);
         }

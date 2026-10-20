@@ -9,3 +9,6 @@ pub use gap::*;
 
 mod clock;
 pub use clock::*;
+
+mod status_line;
+pub use status_line::*;

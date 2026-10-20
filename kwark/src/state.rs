@@ -159,6 +159,11 @@ impl State {
         self.inner.insert(TypeId::of::<T>(), Box::new(data));
     }
 
+    /// Checks whether a type is within the state
+    pub fn has<T: Any + 'static>(&self) -> bool {
+        self.inner.contains_key(&TypeId::of::<T>())
+    }
+
     /// Gets a set of items out from the TypeMap
     pub fn get<'a, T: GetManyAny<'a>>(&'a mut self) -> T {
         T::get_many_any(&mut self.inner).expect("Types should be checked and inserted early")

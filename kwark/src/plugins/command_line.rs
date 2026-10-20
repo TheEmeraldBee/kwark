@@ -15,6 +15,11 @@ pub struct CommandLineState {
 }
 
 impl CommandLineState {
+    /// Returns the text currently typed into the state
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
     /// Convert a char index into a byte index into `text`.
     fn byte_index(&self, char_idx: usize) -> usize {
         self.text

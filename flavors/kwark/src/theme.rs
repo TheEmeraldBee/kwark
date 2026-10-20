@@ -79,5 +79,10 @@ pub fn init_theme(state: &mut State) {
         ("borders", f(OVERLAY2)),
         ("mode.normal", f(TEXT_DARK).bg(TEAL)),
         ("mode.insert", f(TEXT_DARK).bg(MAUVE)),
+        ("mode.command", f(TEXT_DARK).bg(LAVENDER)),
+        ("statusline.command", f(MAUVE)),
+        ("statusline.log.error", f(MAROON)),
+        ("statusline.log.warn", f(RED)),
+        ("statusline.log.info", f(SKY)),
     ]);
 }

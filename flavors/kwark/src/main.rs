@@ -78,6 +78,7 @@ fn main() -> anyhow::Result<()> {
     plugins::visual::init(&mut editor);
 
     // Each plugin seeds the state its own commands need
+    editor.install(plugins::editor_commands::Plugin)?;
     editor.install(plugins::movement::Plugin)?;
     editor.install(plugins::insert::Plugin)?;
     editor.install(plugins::window::Plugin)?;
@@ -146,6 +147,7 @@ fn main() -> anyhow::Result<()> {
 
                 g.bind(&["t"], "Open YAZI file picker", |s| {
                     let value = replace_term(s.sender(), || {
+                        let _ = std::fs::remove_file("/tmp/chooser");
                         Command::new("yazi")
                             .args(["--chooser-file", "/tmp/chooser"])
                             .spawn()?
@@ -388,6 +390,7 @@ fn main() -> anyhow::Result<()> {
             .push(pipelines::gutters::Gap(1))
             .push(pipelines::gutters::VerticalBar);
     }
+
     {
         let window_pipeline = editor.get::<&mut WindowPipeline>();
 
@@ -397,15 +400,23 @@ fn main() -> anyhow::Result<()> {
 
         window_pipeline.set_border(pipelines::borders::LowProfile(BorderType::Thick));
     }
+
     {
         let editor_pipeline = editor.get::<&mut EditorPipeline>();
 
-        editor_pipeline.bottom.push_row(|e| {
-            e.push_left(pipelines::bar::Gap(2))
-                .push_left(pipelines::bar::Mode)
-                .push_right(pipelines::bar::Gap(2))
-                .push_right(pipelines::bar::Clock::new("%I:%m %P"))
-        });
+        editor_pipeline
+            .bottom
+            .push_row(|e| {
+                e.push_left(pipelines::bar::Gap(2))
+                    .push_left(pipelines::bar::Mode)
+                    .push_right(pipelines::bar::Gap(2))
+                    .push_right(pipelines::bar::Clock::new("%I:%m %P"))
+            })
+            .push_row(|e| {
+                e.push_left(pipelines::bar::Gap(2))
+                    .push_left(pipelines::bar::StatusLine)
+            })
+            .push_row(|e| e.push_left(pipelines::bar::Gap(1)));
     }
 
     theme::init_theme(&mut editor);
