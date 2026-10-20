@@ -1,0 +1,12 @@
+[package]
+name = "kwark-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kwark-text.workspace = true
+kwark-tree-sitter.workspace = true
+
+ratatui.workspace = true
+ropey = "1.6.1"

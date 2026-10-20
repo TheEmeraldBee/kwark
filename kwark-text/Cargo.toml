@@ -1,0 +1,15 @@
+[package]
+name = "kwark-text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+normpath = "1.5.1"
+ropey = "1.6.1"
+thiserror.workspace = true
+kwark-tree-sitter.workspace = true
+
+[dev-dependencies]
+tree-sitter = "0.27.0"
+tree-sitter-json = "0.24.8"

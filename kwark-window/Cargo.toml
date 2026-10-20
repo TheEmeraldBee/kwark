@@ -1,0 +1,12 @@
+[package]
+name = "kwark-window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kwark-buffer.workspace = true
+kwark-core.workspace = true
+kwark-render.workspace = true
+
+ratatui.workspace = true

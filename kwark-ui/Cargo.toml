@@ -1,0 +1,17 @@
+[package]
+name = "kwark-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kwark-core.workspace = true
+kwark-render.workspace = true
+kwark-theme.workspace = true
+kwark-window.workspace = true
+
+ratatui.workspace = true
+
+# Widgets
+
+chrono = "0.4.45"

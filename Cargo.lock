@@ -628,27 +628,42 @@ name = "kwark"
 version = "0.0.0"
 dependencies = [
  "anyhow",
- "chrono",
  "crossterm",
  "kwark-buffer",
- "kwark-input",
- "kwark-text-buffer",
- "kwark-text-buffer-renderer",
+ "kwark-core",
+ "kwark-plugins",
  "kwark-theme",
  "kwark-tree-sitter",
+ "kwark-ui",
+ "kwark-window",
  "ratatui",
- "tokio",
 ]
 
 [[package]]
 name = "kwark-buffer"
 version = "0.0.0"
 dependencies = [
- "kwark-text-buffer",
- "kwark-text-buffer-renderer",
+ "kwark-render",
+ "kwark-text",
  "kwark-tree-sitter",
  "ratatui",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kwark-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "kwark-buffer",
+ "kwark-input",
+ "kwark-render",
+ "kwark-text",
+ "kwark-theme",
+ "kwark-tree-sitter",
+ "ratatui",
+ "tokio",
 ]
 
 [[package]]
@@ -671,7 +686,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "kwark-text-buffer"
+name = "kwark-plugins"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "kwark-buffer",
+ "kwark-core",
+ "kwark-input",
+ "kwark-render",
+ "kwark-text",
+ "kwark-theme",
+ "kwark-window",
+ "ratatui",
+]
+
+[[package]]
+name = "kwark-render"
+version = "0.0.0"
+dependencies = [
+ "kwark-text",
+ "kwark-tree-sitter",
+ "ratatui",
+ "ropey",
+]
+
+[[package]]
+name = "kwark-text"
 version = "0.0.0"
 dependencies = [
  "kwark-tree-sitter",
@@ -680,16 +721,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tree-sitter",
  "tree-sitter-json",
-]
-
-[[package]]
-name = "kwark-text-buffer-renderer"
-version = "0.0.0"
-dependencies = [
- "kwark-text-buffer",
- "kwark-tree-sitter",
- "ratatui",
- "ropey",
 ]
 
 [[package]]
@@ -707,6 +738,28 @@ dependencies = [
  "thiserror 2.0.18",
  "tree-sitter",
  "tree-sitter-rust",
+]
+
+[[package]]
+name = "kwark-ui"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "kwark-core",
+ "kwark-render",
+ "kwark-theme",
+ "kwark-window",
+ "ratatui",
+]
+
+[[package]]
+name = "kwark-window"
+version = "0.0.0"
+dependencies = [
+ "kwark-buffer",
+ "kwark-core",
+ "kwark-render",
+ "ratatui",
 ]
 
 [[package]]

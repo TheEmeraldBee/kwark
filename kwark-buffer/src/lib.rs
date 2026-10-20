@@ -1,13 +1,13 @@
 use std::{collections::HashMap, fmt::Display, path::PathBuf};
 
-use kwark_text_buffer::{self as text, BoundCursorSet, BufferKind};
-use kwark_text_buffer_renderer::{HitArgs, Pipeline, RenderArgs, Viewport};
+use kwark_text::{self as text, BoundCursorSet, BufferKind};
+use kwark_render::{HitArgs, Pipeline, RenderArgs, Viewport};
 use kwark_tree_sitter::prelude::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Buffer(#[from] kwark_text_buffer::Error),
+    Buffer(#[from] kwark_text::Error),
 
     #[error(transparent)]
     TreeSitter(#[from] kwark_tree_sitter::error::Error),
@@ -194,7 +194,7 @@ impl Buffer {
 /// A basic Identifier to differentiate between different buffers
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ID {
-    Text(kwark_text_buffer::BufferKind),
+    Text(kwark_text::BufferKind),
     Widget(usize),
 }
 

@@ -1,0 +1,26 @@
+[package]
+name = "kwark-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kwark-buffer.workspace = true
+kwark-input.workspace = true
+kwark-render.workspace = true
+kwark-text.workspace = true
+kwark-theme.workspace = true
+kwark-tree-sitter.workspace = true
+
+# Error Handling
+
+anyhow.workspace = true
+
+# Terminal
+
+crossterm.workspace = true
+ratatui.workspace = true
+
+# Runtime
+
+tokio.workspace = true

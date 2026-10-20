@@ -6,11 +6,12 @@ license.workspace = true
 
 [dependencies]
 kwark-buffer.workspace = true
-kwark-input.workspace = true
-kwark-text-buffer.workspace = true
-kwark-text-buffer-renderer.workspace = true
+kwark-core.workspace = true
+kwark-plugins.workspace = true
 kwark-theme.workspace = true
 kwark-tree-sitter.workspace = true
+kwark-ui.workspace = true
+kwark-window.workspace = true
 
 # Error Handling
 
@@ -20,11 +21,3 @@ anyhow.workspace = true
 
 crossterm.workspace = true
 ratatui.workspace = true
-
-# Runtime
-
-tokio.workspace = true
-
-# Widgets
-
-chrono = "0.4.45"
