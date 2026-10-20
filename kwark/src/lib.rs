@@ -96,7 +96,7 @@ pub fn replace<R>(
 
 /// An "installable" set of tooling to add to the editor
 pub trait Plugin {
-    fn register(&self, editor: &mut Editor);
+    fn register(&self, editor: &mut Editor) -> anyhow::Result<()>;
 }
 
 impl Editor {
@@ -114,8 +114,8 @@ impl Editor {
     }
 
     /// Installs a plugin
-    pub fn install(&mut self, plugin: impl Plugin) {
-        plugin.register(self);
+    pub fn install(&mut self, plugin: impl Plugin) -> anyhow::Result<()> {
+        plugin.register(self)
     }
 
     pub fn run(mut self) {
@@ -175,7 +175,8 @@ impl Editor {
 
                         match m.kind {
                             event::MouseEventKind::Drag(event::MouseButton::Left) => {
-                                self.events.handle(&mut self.state, &mut events::MouseDrag)?;
+                                self.events
+                                    .handle(&mut self.state, &mut events::MouseDrag)?;
                             }
                             event::MouseEventKind::Up(event::MouseButton::Left) => {
                                 self.events.handle(&mut self.state, &mut events::MouseUp)?;

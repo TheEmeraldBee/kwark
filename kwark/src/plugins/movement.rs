@@ -34,7 +34,7 @@ pub fn init(editor: &mut Editor) -> anyhow::Result<()> {
 pub struct Plugin;
 
 impl crate::Plugin for Plugin {
-    fn register(&self, editor: &mut Editor) {
+    fn register(&self, editor: &mut Editor) -> anyhow::Result<()> {
         let _ = init(editor);
 
         let registry = editor.get::<&mut CommandRegistry>();
@@ -83,6 +83,8 @@ impl crate::Plugin for Plugin {
             options.all = !options.all;
             Ok(())
         });
+
+        Ok(())
     }
 }
 

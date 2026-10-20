@@ -13,3 +13,6 @@ pub mod visual;
 
 /// A set of commands and bindings for window, split, and buffer handling
 pub mod window;
+
+/// A set of commands and systems for interacting with a command line
+pub mod command_line;

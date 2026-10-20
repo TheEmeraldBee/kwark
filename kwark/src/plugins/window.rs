@@ -6,7 +6,7 @@ use crate::prelude::*;
 pub struct Plugin;
 
 impl crate::Plugin for Plugin {
-    fn register(&self, editor: &mut Editor) {
+    fn register(&self, editor: &mut Editor) -> anyhow::Result<()> {
         let registry = editor.get::<&mut CommandRegistry>();
 
         registry.register("split", |s, args| {
@@ -110,5 +110,7 @@ impl crate::Plugin for Plugin {
             s.get::<&mut Running>().quit();
             Ok(())
         });
+
+        Ok(())
     }
 }

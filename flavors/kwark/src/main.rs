@@ -78,9 +78,10 @@ fn main() -> anyhow::Result<()> {
     plugins::visual::init(&mut editor);
 
     // Each plugin seeds the state its own commands need
-    editor.install(plugins::movement::Plugin);
-    editor.install(plugins::insert::Plugin);
-    editor.install(plugins::window::Plugin);
+    editor.install(plugins::movement::Plugin)?;
+    editor.install(plugins::insert::Plugin)?;
+    editor.install(plugins::window::Plugin)?;
+    editor.install(plugins::command_line::Plugin)?;
 
     let input = editor.get::<&mut InputState>();
 
@@ -294,6 +295,11 @@ fn main() -> anyhow::Result<()> {
 
             buf.change_primary(1);
 
+            Ok(())
+        })?;
+
+        normal.bind(&[":"], "Command Mode", |s| {
+            plugins::command_line::command_mode(s);
             Ok(())
         })?;
 
