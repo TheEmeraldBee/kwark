@@ -16,6 +16,21 @@ impl crate::Plugin for Plugin {
         registry.register("q", quit);
 
         registry.register("write", write);
+        registry.register("w", write);
+
+        registry.register("wq", |s, a| {
+            write(s, a)?;
+            quit(s, a)?;
+
+            Ok(())
+        });
+
+        registry.register("write-quit", |s, a| {
+            write(s, a)?;
+            quit(s, a)?;
+
+            Ok(())
+        });
 
         Ok(())
     }

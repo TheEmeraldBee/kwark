@@ -212,6 +212,8 @@ impl Editor {
                         errors.push(e)
                     }
 
+                    self.state.get::<&mut LogState>().clear();
+
                     // Allow the highest level to block input state
                     if !e.block {
                         match self.state.get::<&mut InputState>().step(chord) {
