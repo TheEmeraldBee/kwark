@@ -1,12 +1,12 @@
 use kwark_text_buffer_renderer::Border;
 use kwark_theme::Theme;
-use ratatui::widgets::{Block, Borders, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::{State, layout::WindowCtx};
 
-pub struct SimpleBorders;
+pub struct Simple(pub BorderType);
 
-impl Border<State, WindowCtx> for SimpleBorders {
+impl Border<State, WindowCtx> for Simple {
     fn render(
         &mut self,
         state: &mut State,
@@ -20,7 +20,10 @@ impl Border<State, WindowCtx> for SimpleBorders {
             false => theme.get("borders"),
         };
 
-        let block = Block::new().borders(Borders::ALL).style(style);
+        let block = Block::new()
+            .borders(Borders::ALL)
+            .border_type(self.0)
+            .style(style);
 
         let out_area = block.inner(area);
 

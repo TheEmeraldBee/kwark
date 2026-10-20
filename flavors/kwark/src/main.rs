@@ -12,7 +12,7 @@ use kwark::{
         tree_sitter::LanguageStore,
     },
 };
-use ratatui::layout::Position;
+use ratatui::{layout::Position, widgets::BorderType};
 
 mod highlighters;
 mod theme;
@@ -389,7 +389,7 @@ fn main() -> anyhow::Result<()> {
             .top
             .push_row(|e| e.push_center(pipelines::bar::Tabs));
 
-        window_pipeline.set_border(pipelines::borders::SimpleBorders);
+        window_pipeline.set_border(pipelines::borders::LowProfile(BorderType::Thick));
     }
     {
         let editor_pipeline = editor.get::<&mut EditorPipeline>();

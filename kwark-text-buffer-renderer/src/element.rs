@@ -2,10 +2,6 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 
 /// Something that can claim space in a header or footer row, then draw into it
-///
-/// `C` carries whatever facts an embedder's elements need that `state` can't
-/// supply on its own, for example which pane is active or which pane is
-/// currently being drawn
 pub trait Element<S, C> {
     /// Width this element wants, given the width left in its row
     fn width(&mut self, state: &mut S, ctx: &C, available: u16) -> u16;
@@ -19,8 +15,7 @@ pub trait Element<S, C> {
     fn render(&mut self, state: &mut S, ctx: &C, area: Rect, buf: &mut Buffer);
 }
 
-/// A header or footer row, packed from a left group, a right group, and a
-/// centered remainder
+/// A header or footer row
 pub struct ElementRow<S, C> {
     left: Vec<Box<dyn Element<S, C>>>,
     center: Vec<Box<dyn Element<S, C>>>,
@@ -51,10 +46,6 @@ impl<S, C> ElementRow<S, C> {
     }
 
     /// Appends an element to the right group
-    ///
-    /// The right group packs from the row's right edge inward, so the first
-    /// element pushed sits closest to that edge and each one after it sits
-    /// further to the left
     pub fn push_right(&mut self, e: impl Element<S, C> + 'static) -> &mut Self {
         self.right.push(Box::new(e));
         self
@@ -143,10 +134,7 @@ impl<S, C> ElementRow<S, C> {
     }
 }
 
-/// A stack of [`ElementRow`]s, laid out top to bottom
-///
-/// Lets a header or footer be more than one row deep, for example a tab bar
-/// with its own divider line underneath
+/// A stack of [`ElementRow`]s
 pub struct ElementGrid<S, C>(Vec<ElementRow<S, C>>);
 
 impl<S, C> Default for ElementGrid<S, C> {
@@ -168,8 +156,6 @@ impl<S, C> ElementGrid<S, C> {
     }
 
     /// Total height of however many whole rows, from the top, fit within `available`
-    ///
-    /// A row that would not fit whole is dropped, along with every row after it
     pub fn height(&mut self, state: &mut S, ctx: &C, available: u16) -> u16 {
         let mut total = 0;
         for row in &mut self.0 {
