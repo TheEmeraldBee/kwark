@@ -113,7 +113,7 @@ pub struct CallbackSender(pub(crate) UnboundedSender<Callback>);
 impl CallbackSender {
     pub fn send_fn(
         &mut self,
-        func: impl FnOnce(&mut Editor) -> anyhow::Result<()> + Send + Sync + 'static,
+        func: impl FnOnce(&mut Editor) -> anyhow::Result<()> + Send + 'static,
     ) {
         let _ = self.0.send(Callback::Func(Box::new(func)));
     }

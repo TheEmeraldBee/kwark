@@ -180,12 +180,12 @@ impl kwark_core::Plugin for Plugin {
         })?;
 
         command.bind(&["up"], "History Older", |s| {
-            s.get::<&mut CommandLineState>().change_history(1);
+            s.get::<&mut CommandLineState>().change_history(-1);
             Ok(())
         })?;
 
         command.bind(&["down"], "History Newer", |s| {
-            s.get::<&mut CommandLineState>().change_history(-1);
+            s.get::<&mut CommandLineState>().change_history(1);
             Ok(())
         })?;
 

@@ -1,8 +1,10 @@
 use kwark_buffer::Buffer;
 
 use kwark_core::{
-    Running, State,
+    Flags, Running, State,
     commands::{Args, CommandRegistry},
+    frame::FRAME_COUNT_FLAG,
+    log::{LogState, Severity},
 };
 
 use crate::internal_utils::active_buffer_normal;
@@ -19,17 +21,11 @@ impl kwark_core::Plugin for Plugin {
         registry.register("write", write);
         registry.register("w", write);
 
-        registry.register("wq", |s, a| {
-            write(s, a)?;
-            quit(s, a)?;
+        registry.register("wq", write_quit);
+        registry.register("write-quit", write_quit);
 
-            Ok(())
-        });
-
-        registry.register("write-quit", |s, a| {
-            write(s, a)?;
-            quit(s, a)?;
-
+        registry.register("toggle_frame_count", |s, _| {
+            s.get::<&mut Flags>().toggle(FRAME_COUNT_FLAG);
             Ok(())
         });
 
@@ -44,17 +40,41 @@ pub fn quit(s: &mut State, _args: &Args) -> anyhow::Result<()> {
 }
 
 pub fn write(s: &mut State, args: &Args) -> anyhow::Result<()> {
-    let Some(buf) = active_buffer_normal(s) else {
-        return Ok(());
+    write_then(s, args, |_| Ok(()))
+}
+
+/// Writes the active buffer, then quits once the write succeeds
+pub fn write_quit(s: &mut State, args: &Args) -> anyhow::Result<()> {
+    write_then(s, args, |s| quit(s, &Args::default()))
+}
+
+/// Writes the active buffer in the background, then runs `then` once the write succeeds
+pub fn write_then(
+    s: &mut State,
+    args: &Args,
+    then: impl FnOnce(&mut State) -> anyhow::Result<()> + Send + 'static,
+) -> anyhow::Result<()> {
+    let job = match active_buffer_normal(s) {
+        Some(Buffer::Text { buf, .. }) => {
+            let filepath = args.get("path", 0).and_then(|x| x.as_str());
+            buf.save_job(filepath.map(|x| x.into()))
+        }
+        _ => return then(s),
     };
 
-    let Buffer::Text { buf, .. } = buf else {
-        return Ok(());
-    };
+    let name = job.name();
 
-    let filepath = args.get("path", 0).and_then(|x| x.as_str());
+    s.spawn_blocking(
+        move || job.run(),
+        move |s, res| {
+            res?;
 
-    buf.save(filepath.map(|x| x.into()))?;
+            s.get::<&mut LogState>()
+                .log(format!("wrote {name}"), Severity::Info);
+
+            then(s)
+        },
+    );
 
     Ok(())
 }

@@ -3,8 +3,12 @@ mod state;
 
 pub mod commands;
 pub mod events;
+pub mod frame;
 pub mod log;
 pub mod prelude;
+pub mod suspend;
+pub mod tasks;
+pub mod timers;
 
 pub use editor::*;
 pub use state::*;

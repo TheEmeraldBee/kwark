@@ -75,6 +75,8 @@ pub fn init_theme(state: &mut State) {
         ("bar.tab", f(TEXT)),
         ("bar.tab.primary", f(MAUVE)),
         ("bar.clock", f(PINK)),
+        ("bar.frames", f(OVERLAY2)),
+        ("bar.spinner", f(MAUVE)),
         ("borders.active", f(GREEN)),
         ("borders", f(OVERLAY2)),
         ("mode.normal", f(TEXT_DARK).bg(TEAL)),

@@ -12,3 +12,6 @@ pub use clock::*;
 
 mod freda;
 pub use freda::*;
+
+mod spinner;
+pub use spinner::*;

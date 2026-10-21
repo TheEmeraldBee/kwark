@@ -40,19 +40,47 @@ impl BufferEntry {
     }
 
     pub fn save(&self, path: Option<PathBuf>) -> Result<()> {
-        let writer = match self.kind.clone() {
-            BufferKind::Scratch(n) => std::fs::File::create_new(path.unwrap_or(n.into()))?,
-            BufferKind::File(p) => std::fs::File::create(path.unwrap_or(p))?,
-        };
+        self.save_job(path).run()
+    }
 
-        self.buffer.write(writer)?;
-
-        Ok(())
+    /// Returns a save of the current text that can run on any thread
+    pub fn save_job(&self, path: Option<PathBuf>) -> SaveJob {
+        SaveJob {
+            rope: self.buffer.rope().clone(),
+            kind: self.kind.clone(),
+            path,
+        }
     }
 
     /// Retrieves the kind of the buffer from it's entry
     pub fn kind(&self) -> &BufferKind {
         &self.kind
+    }
+}
+
+/// A snapshot of a buffer's text and where to save it
+pub struct SaveJob {
+    rope: ropey::Rope,
+    kind: BufferKind,
+    path: Option<PathBuf>,
+}
+
+impl SaveJob {
+    /// Writes the snapshot to disk
+    pub fn run(self) -> Result<()> {
+        let writer = match self.kind {
+            BufferKind::Scratch(n) => std::fs::File::create_new(self.path.unwrap_or(n.into()))?,
+            BufferKind::File(p) => std::fs::File::create(self.path.unwrap_or(p))?,
+        };
+
+        self.rope.write_to(writer)?;
+
+        Ok(())
+    }
+
+    /// The display name of the buffer being saved
+    pub fn name(&self) -> String {
+        self.kind.to_string()
     }
 }
 

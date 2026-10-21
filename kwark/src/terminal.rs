@@ -1,29 +1,26 @@
-use std::io::stdout;
+use std::io::{self, stdout};
 
 use crossterm::{
     event,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use kwark_core::CallbackSender;
-
-/// Run a function, replacing the terminal with this
-///
-/// Then auto-restore the window
-pub fn replace<R>(
-    mut sender: CallbackSender,
-    func: impl FnOnce() -> anyhow::Result<R>,
-) -> anyhow::Result<R> {
+/// Hands the terminal back to the shell
+pub(crate) fn leave() -> io::Result<()> {
     crossterm::execute!(
         stdout(),
         event::PopKeyboardEnhancementFlags,
         event::DisableBracketedPaste,
         event::DisableMouseCapture,
         LeaveAlternateScreen,
-    )
-    .unwrap();
+    )?;
 
-    let res = func();
+    terminal::disable_raw_mode()
+}
+
+/// Takes the terminal back from the shell
+pub(crate) fn enter() -> io::Result<()> {
+    terminal::enable_raw_mode()?;
 
     crossterm::execute!(
         stdout(),
@@ -32,15 +29,7 @@ pub fn replace<R>(
         ),
         event::EnableBracketedPaste,
         event::EnableMouseCapture,
-        EnterAlternateScreen
+        EnterAlternateScreen,
+        terminal::Clear(terminal::ClearType::All),
     )
-    .unwrap();
-
-    // Tell the terminal to do a full redraw
-    sender.send_fn(|e| {
-        e.term().clear()?;
-        Ok(())
-    });
-
-    res
 }

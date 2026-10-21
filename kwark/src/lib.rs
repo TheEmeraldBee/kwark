@@ -8,4 +8,3 @@ pub use kwark_plugins as plugins;
 pub use kwark_ui as ui;
 
 pub use run::{init, run};
-pub use terminal::replace;

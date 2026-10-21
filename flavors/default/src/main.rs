@@ -8,7 +8,7 @@ use kwark::{
     plugins::{self, cursor_overrides::CursorOverrides},
     prelude::{
         buffer::Storage,
-        text::{BoundCursorSet, BufferEntry, CursorOptions, CursorSet},
+        text::{BoundCursorSet, BufferEntry, CursorOptions},
         tree_sitter::LanguageStore,
     },
 };
@@ -32,6 +32,21 @@ fn commit_changes(state: &mut State) {
     };
 
     buf.commit_change();
+}
+
+/// Reads a file in the background, then shows it in the active window
+fn open_file(s: &mut State, path: PathBuf) {
+    s.spawn_blocking(
+        move || BufferEntry::new_file(path),
+        |s, buf| {
+            let (layout, storage) = s.get::<(&mut WindowLayout, &mut Storage)>();
+
+            let id = storage.insert(buf?);
+            layout.active_mut().select(id);
+
+            Ok(())
+        },
+    );
 }
 
 fn buffer_len_lines(storage: &buffer::Storage, id: &buffer::ID) -> usize {
@@ -108,7 +123,7 @@ fn main() -> anyhow::Result<()> {
         normal.group(&["space"], "General Actions", |g| {
             g.group(&["f"], "File Pickers", |g| {
                 g.bind(&["f"], "Open FZF file picker", |s| {
-                    let value = replace_term(s.sender(), || {
+                    s.suspend(|s| {
                         let out = String::from_utf8_lossy(
                             &Command::new("sh")
                                 .args(["-c", "find \"$PWD\" -type f | fzf"])
@@ -120,33 +135,19 @@ fn main() -> anyhow::Result<()> {
                         .to_string();
 
                         if out.trim().is_empty() {
-                            return Ok(None);
+                            return Ok(());
                         }
 
-                        Ok(Some(out.trim().to_string()))
-                    })?;
+                        open_file(s, out.trim().into());
 
-                    if let Some(path) = value {
-                        let (layout, storage) =
-                            s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
-
-                        let buf = BufferEntry::new_file(path.into())?;
-                        let id = storage.insert(buffer::Buffer::Text {
-                            id: buf.kind().clone(),
-                            buf: Box::new(buf),
-                            cursors: Box::new(CursorSet::new()),
-                            tree: None,
-                            parsed_version: 0,
-                        });
-
-                        layout.active_mut().select(id);
-                    }
+                        Ok(())
+                    });
 
                     Ok(())
                 })?;
 
                 g.bind(&["t"], "Open YAZI file picker", |s| {
-                    let value = replace_term(s.sender(), || {
+                    s.suspend(|s| {
                         let _ = std::fs::remove_file("/tmp/chooser");
                         Command::new("yazi")
                             .args(["--chooser-file", "/tmp/chooser"])
@@ -161,29 +162,17 @@ fn main() -> anyhow::Result<()> {
                             })
                             .collect::<Vec<_>>();
 
-                        Ok(lines)
-                    })?;
+                        for file in lines {
+                            let path = PathBuf::from(file).canonicalize()?;
+                            if !path.is_file() {
+                                continue;
+                            }
 
-                    let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
-
-                    for file in value {
-                        let path = PathBuf::from(file).canonicalize()?;
-                        if !path.is_file() {
-                            continue;
+                            open_file(s, path);
                         }
 
-                        let buf = BufferEntry::new_file(path)?;
-
-                        let id = storage.insert(buffer::Buffer::Text {
-                            id: buf.kind().clone(),
-                            buf: Box::new(buf),
-                            cursors: Box::new(CursorSet::new()),
-                            tree: None,
-                            parsed_version: 0,
-                        });
-
-                        layout.active_mut().select(id);
-                    }
+                        Ok(())
+                    });
 
                     Ok(())
                 })?;
@@ -410,8 +399,10 @@ fn main() -> anyhow::Result<()> {
             .push_row(|e| {
                 e.push_left(ui::bar::Gap(2))
                     .push_left(ui::bar::Mode)
+                    .push_left(ui::bar::Gap(1))
+                    .push_left(ui::bar::Spinner::new())
                     .push_right(ui::bar::Gap(2))
-                    .push_right(ui::bar::Clock::new("%I:%m %P"))
+                    .push_right(ui::bar::Clock::new("%I:%M %P"))
             })
             .push_row(|e| {
                 e.push_left(ui::bar::Gap(2))
