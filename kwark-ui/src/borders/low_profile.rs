@@ -24,6 +24,21 @@ impl Border<State, WindowCtx> for LowProfile {
             false => theme.get("borders"),
         };
 
+        let mut borders = Borders::NONE;
+
+        if ctx.boundaries.right {
+            borders |= Borders::RIGHT
+        }
+        if ctx.boundaries.left {
+            borders |= Borders::LEFT
+        }
+        if ctx.boundaries.top {
+            borders |= Borders::TOP
+        }
+        if ctx.boundaries.bottom {
+            borders |= Borders::BOTTOM
+        }
+
         if ctx.boundaries.left {
             area.x -= 1;
             area.width += 1;
@@ -34,7 +49,7 @@ impl Border<State, WindowCtx> for LowProfile {
         }
 
         let block = Block::new()
-            .borders(Borders::ALL)
+            .borders(borders)
             .border_type(self.0)
             .merge_borders(MergeStrategy::Fuzzy)
             .style(style);

@@ -21,3 +21,8 @@ anyhow.workspace = true
 
 crossterm.workspace = true
 ratatui.workspace = true
+
+# Async
+
+futures-util.workspace = true
+tokio.workspace = true

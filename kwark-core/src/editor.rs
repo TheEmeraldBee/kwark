@@ -1,8 +1,9 @@
 use std::{
     any::{Any, TypeId},
     ops::{Deref, DerefMut},
-    sync::mpsc::{self, Receiver, Sender},
 };
+
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use ratatui::{DefaultTerminal, Frame};
 
@@ -25,7 +26,7 @@ pub struct Editor {
 
     pub running: bool,
 
-    callback_rx: Receiver<Callback>,
+    callback_rx: UnboundedReceiver<Callback>,
 }
 
 impl Deref for Editor {
@@ -43,7 +44,7 @@ impl DerefMut for Editor {
 
 impl Default for Editor {
     fn default() -> Self {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
         Self {
             term: None,
 
@@ -59,22 +60,22 @@ impl Default for Editor {
 }
 
 impl Editor {
-    /// Flush and call all events
-    pub fn flush(&mut self) -> anyhow::Result<()> {
-        loop {
-            let Ok(val) = self.callback_rx.try_recv() else {
-                break;
-            };
+    /// Waits for the next callback
+    pub async fn recv_callback(&mut self) -> Option<Callback> {
+        self.callback_rx.recv().await
+    }
 
-            match val {
-                Callback::Func(func) => func(self)?,
-                Callback::Event(type_, data) => {
-                    self.events.handle_any(&mut self.state, type_, data)?
-                }
-            }
+    /// Returns the next callback that is already queued
+    pub fn try_recv_callback(&mut self) -> Option<Callback> {
+        self.callback_rx.try_recv().ok()
+    }
+
+    /// Runs a single callback
+    pub fn handle_callback(&mut self, callback: Callback) -> anyhow::Result<()> {
+        match callback {
+            Callback::Func(func) => func(self),
+            Callback::Event(type_, data) => self.events.handle_any(&mut self.state, type_, data),
         }
-
-        Ok(())
     }
 
     pub(crate) fn take_term(&mut self) -> DefaultTerminal {
@@ -107,7 +108,7 @@ impl Editor {
 
 /// A type used to send Callbacks through mpsc
 #[derive(Clone)]
-pub struct CallbackSender(pub(crate) Sender<Callback>);
+pub struct CallbackSender(pub(crate) UnboundedSender<Callback>);
 
 impl CallbackSender {
     pub fn send_fn(
@@ -121,6 +122,17 @@ impl CallbackSender {
         let _ = self
             .0
             .send(Callback::Event(TypeId::of::<T>(), Box::new(data)));
+    }
+}
+
+/// The async runtime that background work runs on
+#[derive(Clone)]
+pub struct Runtime(pub tokio::runtime::Handle);
+
+impl Deref for Runtime {
+    type Target = tokio::runtime::Handle;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

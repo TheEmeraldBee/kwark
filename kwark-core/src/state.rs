@@ -3,8 +3,9 @@ use std::{
     collections::HashMap,
     fmt,
     ops::{Deref, DerefMut},
-    sync::mpsc::Sender,
 };
+
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{Callback, CallbackSender};
 
@@ -32,12 +33,12 @@ impl Flags {
 }
 
 pub struct State {
-    callback_tx: Sender<Callback>,
+    callback_tx: UnboundedSender<Callback>,
     inner: HashMap<TypeId, Box<dyn Any>>,
 }
 
 impl State {
-    pub fn new(callback_tx: Sender<Callback>) -> Self {
+    pub fn new(callback_tx: UnboundedSender<Callback>) -> Self {
         let mut val = Self {
             callback_tx,
             inner: HashMap::default(),

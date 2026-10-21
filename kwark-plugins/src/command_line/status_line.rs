@@ -10,7 +10,7 @@ pub struct StatusLine;
 
 impl<C> Element<State, C> for StatusLine {
     fn width(&mut self, _state: &mut State, _ctx: &C, available: u16) -> u16 {
-        available / 4
+        available / 2
     }
 
     fn height(&mut self, _state: &mut State, _ctx: &C) -> u16 {
