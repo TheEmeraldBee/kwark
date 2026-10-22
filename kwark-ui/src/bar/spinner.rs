@@ -31,8 +31,8 @@ impl Default for Spinner {
 impl<C> Element<State, C> for Spinner {
     fn width(&mut self, state: &mut State, _ctx: &C, _available: u16) -> u16 {
         match state.get::<&Tasks>().busy() {
-            true => 2,
-            false => 0,
+            true => 1,
+            false => 1,
         }
     }
 
@@ -43,11 +43,16 @@ impl<C> Element<State, C> for Spinner {
         area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) {
+        let step = (self.start.elapsed().as_millis() / STEP.as_millis()) as u32;
+
         if !state.get::<&Tasks>().busy() {
+            let style = state.get::<&Theme>().get("bar.spinner");
+            Paragraph::new(format!("{} ", GLYPHS[step as usize % GLYPHS.len()]))
+                .style(style)
+                .render(area, buf);
             return;
         }
 
-        let step = (self.start.elapsed().as_millis() / STEP.as_millis()) as u32;
         let next = self.start + STEP * (step + 1);
 
         state.get::<&mut Redraw>().request_at(next);
