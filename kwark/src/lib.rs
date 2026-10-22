@@ -1,4 +1,5 @@
 mod run;
+mod syntax;
 mod terminal;
 
 pub mod prelude;

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use tree_sitter::{IncludedRangesError, QueryError};
+use tree_sitter::{IncludedRangesError, LanguageError, QueryError};
 
 /// The set of errors the parsing engine can return
 #[derive(thiserror::Error, Debug)]
@@ -13,6 +13,9 @@ pub enum Error {
 
     #[error(transparent)]
     IncludedRanges(#[from] IncludedRangesError),
+
+    #[error(transparent)]
+    Language(#[from] LanguageError),
 
     #[error(transparent)]
     QueryLoad(#[from] QueryLoadError),

@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     io,
     path::{Path, PathBuf},
-    rc::Rc,
+    sync::Arc,
 };
 
 use tree_sitter::{LanguageError, Parser, Query};
@@ -16,7 +16,7 @@ pub use tree_sitter::Language;
 pub struct LanguageStore {
     map: HashMap<String, StoredLanguage>,
 
-    queries: HashMap<(String, String), Rc<Query>>,
+    queries: HashMap<(String, String), Arc<Query>>,
 
     query_path: PathBuf,
 }
@@ -53,7 +53,7 @@ impl LanguageStore {
     /// - The query path is missing
     /// - The file fails to read
     /// - The query contents fail to load
-    pub fn get_query(&mut self, lang: &str, query: &str) -> Result<Rc<Query>, QueryLoadError> {
+    pub fn get_query(&mut self, lang: &str, query: &str) -> Result<Arc<Query>, QueryLoadError> {
         let key = (lang.to_string(), query.to_string());
 
         if let Some(cached) = self.queries.get(&key) {
@@ -72,7 +72,7 @@ impl LanguageStore {
 
         let file_contents = std::fs::read_to_string(query_path)?;
 
-        let compiled = Rc::new(Query::new(language, &file_contents)?);
+        let compiled = Arc::new(Query::new(language, &file_contents)?);
 
         self.queries.insert(key, compiled.clone());
 
@@ -118,6 +118,43 @@ impl LanguageStore {
         self.map.insert(name.clone(), stored);
 
         Ok(LanguageBuilder { store: self, name })
+    }
+
+    /// Returns a copy of the store with its own parsers
+    ///
+    /// # Errors
+    /// Returns an error when creating a parser fails
+    pub fn fork(&self) -> Result<Self, crate::error::Error> {
+        let mut map = HashMap::with_capacity(self.map.len());
+
+        for (name, stored) in &self.map {
+            let mut parser = Parser::new();
+            parser.set_language(&stored.language)?;
+
+            map.insert(
+                name.clone(),
+                StoredLanguage {
+                    language: stored.language.clone(),
+                    parser,
+                    extensions: stored.extensions.clone(),
+                    filenames: stored.filenames.clone(),
+                    shebangs: stored.shebangs.clone(),
+                },
+            );
+        }
+
+        Ok(Self {
+            map,
+            queries: self.queries.clone(),
+            query_path: self.query_path.clone(),
+        })
+    }
+
+    /// Keeps the queries another store compiled that this store lacks
+    pub fn absorb_queries(&mut self, other: LanguageStore) {
+        for (key, query) in other.queries {
+            self.queries.entry(key).or_insert(query);
+        }
     }
 
     /// Retrieves the parser for the given language from the store
@@ -249,5 +286,29 @@ mod tests {
     fn no_match_returns_none() {
         let store = store_with_rust();
         assert_eq!(store.detect(Some(Path::new("notes.txt")), None), None);
+    }
+
+    #[test]
+    fn fork_keeps_languages_and_detection() {
+        let store = store_with_rust();
+        let mut fork = store.fork().unwrap();
+
+        assert_eq!(fork.detect(Some(Path::new("main.rs")), None), Some("rust"));
+        assert!(fork.get_parser("rust").is_some());
+    }
+
+    #[test]
+    fn fork_can_move_to_another_thread() {
+        let fork = store_with_rust().fork().unwrap();
+
+        let parsed = std::thread::spawn(move || {
+            let mut fork = fork;
+            let rope = ropey::Rope::from_str("fn main() {}");
+            crate::tree::SyntaxTree::parse(&mut fork, "rust", &rope).is_ok()
+        })
+        .join()
+        .unwrap();
+
+        assert!(parsed);
     }
 }

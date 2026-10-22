@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+kwark-bus.workspace = true
 kwark-buffer.workspace = true
 kwark-core.workspace = true
 kwark-render.workspace = true

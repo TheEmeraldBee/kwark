@@ -55,7 +55,7 @@ impl TaskHandle {
         self.id
     }
 
-    /// Cancels the task, its completion never runs
+    /// Cancels the task
     pub fn abort(&self) {
         self.abort.abort();
     }
@@ -65,7 +65,7 @@ impl TaskHandle {
     }
 }
 
-/// Marks a task as ended once dropped
+/// The end marker for a task
 struct EndGuard {
     sender: CallbackSender,
     id: TaskId,
@@ -82,7 +82,7 @@ impl Drop for EndGuard {
 }
 
 impl State {
-    /// Runs a future in the background and applies its result on the main thread
+    /// Runs a future in the background, then `done` with its result
     pub fn spawn<T: Send + 'static>(
         &mut self,
         fut: impl Future<Output = T> + Send + 'static,
@@ -108,7 +108,7 @@ impl State {
         }
     }
 
-    /// Runs blocking work on a background thread and applies its result on the main thread
+    /// Runs blocking work in the background, then `done` with its result
     pub fn spawn_blocking<T: Send + 'static>(
         &mut self,
         work: impl FnOnce() -> T + Send + 'static,

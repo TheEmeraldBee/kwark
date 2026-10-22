@@ -43,7 +43,7 @@ impl BufferEntry {
         self.save_job(path).run()
     }
 
-    /// Returns a save of the current text that can run on any thread
+    /// Returns a save job for the current text
     pub fn save_job(&self, path: Option<PathBuf>) -> SaveJob {
         SaveJob {
             rope: self.buffer.rope().clone(),

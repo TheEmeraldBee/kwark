@@ -1,5 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
+use kwark_bus::EventSender;
+
 use crossterm::event::{
     KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
@@ -381,15 +383,23 @@ impl<S: 'static> InputTree<S> {
 pub struct InputState<S: 'static> {
     trees: HashMap<String, InputTree<S>>,
     mode: String,
+    bus: EventSender,
+}
+
+/// An event when the input mode changes
+#[derive(Debug, Clone)]
+pub struct ModeChanged {
+    pub from: String,
+    pub to: String,
 }
 
 impl<S: 'static> InputState<S> {
     /// Create a new state starting in the given mode
-    pub fn new(mode: impl Into<String>) -> Self {
+    pub fn new(mode: impl Into<String>, bus: EventSender) -> Self {
         let mode = mode.into();
         let mut trees = HashMap::new();
         trees.insert(mode.clone(), InputTree::new());
-        Self { trees, mode }
+        Self { trees, mode, bus }
     }
 
     /// Name of the currently active mode
@@ -402,8 +412,16 @@ impl<S: 'static> InputState<S> {
         if let Some(tree) = self.trees.get_mut(&self.mode) {
             tree.reset();
         }
-        self.mode = mode.into();
+
+        let from = std::mem::replace(&mut self.mode, mode.into());
         self.trees.entry(self.mode.clone()).or_default();
+
+        if from != self.mode {
+            self.bus.emit(ModeChanged {
+                from,
+                to: self.mode.clone(),
+            });
+        }
     }
 
     /// Get or create the `InputTree` for a mode, e.g. for `register`/`describe`
@@ -455,5 +473,27 @@ impl<S: 'static> InputState<S> {
         }
 
         out
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    pub fn set_mode_emits_only_on_change() {
+        let (bus, mut rx) = kwark_bus::channel();
+        let mut state = InputState::<()>::new("normal", bus);
+
+        state.set_mode("normal");
+        assert!(rx.try_recv().is_none());
+
+        state.set_mode("insert");
+        let (_, event) = rx.try_recv().unwrap();
+        let event = event.downcast_ref::<ModeChanged>().unwrap();
+        assert_eq!(
+            (event.from.as_str(), event.to.as_str()),
+            ("normal", "insert")
+        );
     }
 }

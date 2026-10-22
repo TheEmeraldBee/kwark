@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use kwark_buffer as buffer;
+use kwark_bus::EventSender;
 use kwark_core::{Pipeline, State};
 use kwark_render::Boundaries;
 
 use ratatui::layout::{self, Position, Rect};
 use ratatui::prelude::*;
 
-use crate::{Window, WindowPipeline};
+use crate::{FocusChanged, Window, WindowPipeline};
 
 /// Identifies a window within a [`WindowLayout`]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -64,19 +65,15 @@ pub struct WindowLayout {
     root: Child,
     active: LeafId,
 
+    bus: EventSender,
+
     next_leaf: usize,
     next_node: usize,
 }
 
-impl Default for WindowLayout {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl WindowLayout {
     /// Creates a new window layout with a single window
-    pub fn new() -> Self {
+    pub fn new(bus: EventSender) -> Self {
         let root = LeafId(0);
 
         let mut leaves = HashMap::new();
@@ -95,8 +92,17 @@ impl WindowLayout {
             root: Child::Leaf(root),
             active: root,
 
+            bus,
+
             next_leaf: 1,
             next_node: 0,
+        }
+    }
+
+    fn set_active(&mut self, id: LeafId) {
+        if id != self.active {
+            let from = std::mem::replace(&mut self.active, id);
+            self.bus.emit(FocusChanged { from, to: id });
         }
     }
 
@@ -125,7 +131,7 @@ impl WindowLayout {
     /// Focuses the given window, if it exists
     pub fn focus(&mut self, id: LeafId) {
         if self.leaves.contains_key(&id) {
-            self.active = id;
+            self.set_active(id);
         }
     }
 
@@ -146,7 +152,7 @@ impl WindowLayout {
                     } else {
                         split.children[0]
                     };
-                    self.active = self.first_leaf(target);
+                    self.set_active(self.first_leaf(target));
                     return;
                 }
             }
@@ -198,7 +204,7 @@ impl WindowLayout {
         }
 
         if self.active == id {
-            self.active = self.first_leaf(sibling);
+            self.set_active(self.first_leaf(sibling));
         }
     }
 
@@ -246,7 +252,7 @@ impl WindowLayout {
             None => self.root = Child::Split(node_id),
         }
 
-        self.active = new_id;
+        self.set_active(new_id);
         new_id
     }
 
@@ -419,5 +425,38 @@ impl WindowLayout {
             Child::Leaf(id) => id,
             Child::Split(id) => self.first_leaf(self.splits[&id].children[0]),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn focus_events(rx: &mut kwark_bus::EventReceiver) -> Vec<(LeafId, LeafId)> {
+        let mut out = vec![];
+
+        while let Some((_, event)) = rx.try_recv() {
+            if let Some(e) = event.downcast_ref::<FocusChanged>() {
+                out.push((e.from, e.to));
+            }
+        }
+
+        out
+    }
+
+    #[test]
+    pub fn focus_changes_emit_once_each() {
+        let (bus, mut rx) = kwark_bus::channel();
+        let mut layout = WindowLayout::new(bus);
+        let first = layout.active_id();
+
+        let second = layout.split(layout::Direction::Horizontal);
+        assert_eq!(focus_events(&mut rx), [(first, second)]);
+
+        layout.focus(second);
+        assert!(focus_events(&mut rx).is_empty());
+
+        layout.close(second);
+        assert_eq!(focus_events(&mut rx), [(second, first)]);
     }
 }

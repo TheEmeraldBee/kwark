@@ -2,10 +2,10 @@ use std::time::{Duration, Instant};
 
 use crate::State;
 
-/// The flag that shows the frame count in the bar
+/// Flag for the frame count in the bar
 pub const FRAME_COUNT_FLAG: &str = "debug_frame_count";
 
-/// Frame requests for the main loop
+/// Pending frame requests
 #[derive(Default)]
 pub struct Redraw {
     now: bool,
@@ -23,7 +23,7 @@ impl Redraw {
         self.at = Some(self.at.map_or(at, |x| x.min(at)));
     }
 
-    /// Returns when the next frame is due, no sooner than `earliest`
+    /// Returns when the next frame is due
     pub fn deadline(&self, earliest: Instant) -> Option<Instant> {
         if self.now {
             return Some(earliest);
@@ -42,7 +42,7 @@ impl Redraw {
     }
 }
 
-/// The pacing for frames, at most one per interval
+/// The pacing between frames
 pub struct FrameClock {
     interval: Duration,
     last: Option<Instant>,
@@ -92,7 +92,7 @@ impl Default for FrameInfo {
 }
 
 impl FrameInfo {
-    /// Moves on to a new frame starting at `now`
+    /// Advances to a new frame at `now`
     pub fn advance(&mut self, now: Instant) {
         self.dt = now.duration_since(self.now);
         self.now = now;

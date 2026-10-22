@@ -1,4 +1,4 @@
-use std::{ops::Range, rc::Rc};
+use std::{ops::Range, sync::Arc};
 
 use tree_sitter::{Query, QueryCursor, StreamingIterator};
 
@@ -204,7 +204,7 @@ impl SyntaxTree {
 pub struct MultiQuery<'t, S: Source> {
     tree: &'t SyntaxTree,
     source: &'t S,
-    queries: Vec<(String, Rc<Query>)>,
+    queries: Vec<(String, Arc<Query>)>,
     byte_range: Option<Range<usize>>,
 }
 

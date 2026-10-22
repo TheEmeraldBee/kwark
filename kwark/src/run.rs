@@ -21,7 +21,7 @@ use kwark_core::{
 use kwark_theme::Theme;
 use kwark_window::{WindowLayout, WindowPipeline};
 
-use crate::terminal;
+use crate::{syntax, terminal};
 
 use ratatui::{
     macros::{horizontal, vertical},
@@ -31,24 +31,25 @@ use ratatui::{
 
 const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
 
-/// The flag that shows the input tree popup
+/// Flag for the input tree popup
 const INPUT_TREE_FLAG: &str = "input_tree_show";
 
-/// Time a chord sequence waits before the input tree popup shows
+/// Delay before the input tree popup shows
 const INPUT_TREE_DELAY: Duration = Duration::from_millis(400);
 
 /// Creates an editor with the default state
 pub fn init() -> Editor {
     let mut editor = Editor::default();
+    let bus = editor.state.bus();
 
-    editor.state.insert(buffer::Storage::default());
+    editor.state.insert(buffer::Storage::new(bus.clone()));
     editor.state.insert(Pipeline::default());
     editor.state.insert(EditorPipeline::default());
     editor.state.insert(WindowPipeline::default());
-    editor.state.insert(InputState::new("normal"));
+    editor.state.insert(InputState::new("normal", bus.clone()));
     editor.state.insert(Running(true));
     editor.state.insert(Theme::default());
-    editor.state.insert(WindowLayout::new());
+    editor.state.insert(WindowLayout::new(bus));
     editor.state.insert(MousePosition::default());
     editor.state.insert(CommandRegistry::default());
     editor.state.insert(LogState::default());
@@ -57,6 +58,8 @@ pub fn init() -> Editor {
     editor.state.insert(Timers::default());
     editor.state.insert(Tasks::default());
     editor.state.insert(SuspendQueue::default());
+
+    syntax::register(&mut editor);
 
     editor
 }
@@ -115,6 +118,10 @@ async fn run_inner(editor: &mut Editor) -> anyhow::Result<()> {
                 editor.state.get::<&mut Redraw>().clear(now);
                 editor.state.get::<&mut FrameInfo>().advance(now);
 
+                let info = *editor.state.get::<&FrameInfo>();
+                let res = editor.events.handle(&mut editor.state, &mut events::Frame { info });
+                report(editor, res);
+
                 update_buffers(editor)?;
                 draw_frame(editor)?;
 
@@ -127,8 +134,8 @@ async fn run_inner(editor: &mut Editor) -> anyhow::Result<()> {
 
                 handle_term_event(editor, event?);
             }
-            Some(callback) = editor.recv_callback() => {
-                let res = editor.handle_callback(callback);
+            Some(incoming) = editor.recv() => {
+                let res = editor.handle(incoming);
                 report(editor, res);
 
                 editor.state.redraw();
@@ -137,11 +144,13 @@ async fn run_inner(editor: &mut Editor) -> anyhow::Result<()> {
         }
 
         if !editor.state.get::<&SuspendQueue>().is_empty() {
-            // The stream's reader would compete with the suspended program for keys
+            // Frees terminal input for the suspended program
             drop(input);
             run_suspended(editor)?;
             input = EventStream::new();
         }
+
+        editor.state.get::<&mut buffer::Storage>().report_changes();
     }
 
     Ok(())
@@ -159,7 +168,7 @@ fn fire_timers(editor: &mut Editor, now: Instant) {
 }
 
 fn run_suspended(editor: &mut Editor) -> anyhow::Result<()> {
-    // Waits for the dropped stream's reader to release the terminal and clears its pending wake
+    // Waits until terminal input is fully released
     event::poll(Duration::ZERO)?;
 
     terminal::leave()?;
@@ -171,7 +180,7 @@ fn run_suspended(editor: &mut Editor) -> anyhow::Result<()> {
 
     terminal::enter()?;
 
-    // Blanks the previous frame so the next draw repaints every cell
+    // Forces a full repaint on the next draw
     editor.term().swap_buffers();
     editor.state.redraw();
 
@@ -212,6 +221,14 @@ fn handle_term_event(editor: &mut Editor, event: event::Event) {
 
     if visible {
         editor.state.redraw();
+    }
+
+    if let event::Event::Resize(width, height) = event
+        && let Err(e) = editor
+            .events
+            .handle(&mut editor.state, &mut events::Resize { width, height })
+    {
+        errors.push(e);
     }
 
     let chord = match event {
@@ -373,4 +390,43 @@ fn draw_frame(editor: &mut Editor) -> anyhow::Result<()> {
             );
         }
     })
+}
+
+#[cfg(test)]
+mod test {
+    use std::{cell::RefCell, rc::Rc};
+
+    use kwark_core::prelude::text::BufferEntry;
+
+    use super::*;
+
+    #[test]
+    pub fn handlers_see_events_from_other_handlers() {
+        let mut editor = init();
+        let log = Rc::new(RefCell::new(vec![]));
+
+        let opened = log.clone();
+        editor.events.on::<events::BufferOpened>(move |s, _| {
+            opened.borrow_mut().push("opened");
+            s.get::<&mut InputState>().set_mode("insert");
+            Ok(())
+        });
+
+        let mode = log.clone();
+        editor.events.on::<events::ModeChanged>(move |_, e| {
+            mode.borrow_mut().push("mode");
+            assert_eq!(e.to, "insert");
+            Ok(())
+        });
+
+        editor
+            .get::<&mut buffer::Storage>()
+            .insert(BufferEntry::new_scratch("a"));
+
+        while let Some(event) = editor.try_recv_event() {
+            editor.handle_event(event).unwrap();
+        }
+
+        assert_eq!(*log.borrow(), ["opened", "mode"]);
+    }
 }

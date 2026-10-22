@@ -3,6 +3,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use kwark_bus::{EventReceiver, Message};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use ratatui::{DefaultTerminal, Frame};
@@ -17,6 +18,12 @@ pub enum Callback {
     Func(CallbackFn),
 }
 
+/// A message for the main loop
+pub enum Incoming {
+    Callback(Callback),
+    Event(Message),
+}
+
 pub struct Editor {
     pub(crate) term: Option<ratatui::DefaultTerminal>,
 
@@ -27,6 +34,7 @@ pub struct Editor {
     pub running: bool,
 
     callback_rx: UnboundedReceiver<Callback>,
+    bus_rx: EventReceiver,
 }
 
 impl Deref for Editor {
@@ -45,29 +53,53 @@ impl DerefMut for Editor {
 impl Default for Editor {
     fn default() -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
+        let (bus, bus_rx) = kwark_bus::channel();
         Self {
             term: None,
 
-            state: State::new(tx),
+            state: State::new(tx, bus),
 
             events: EventStorage::default(),
 
             running: true,
 
             callback_rx: rx,
+            bus_rx,
         }
     }
 }
 
 impl Editor {
-    /// Waits for the next callback
-    pub async fn recv_callback(&mut self) -> Option<Callback> {
-        self.callback_rx.recv().await
+    /// Waits for the next callback or bus event
+    pub async fn recv(&mut self) -> Option<Incoming> {
+        tokio::select! {
+            Some(callback) = self.callback_rx.recv() => Some(Incoming::Callback(callback)),
+            Some(event) = self.bus_rx.recv() => Some(Incoming::Event(event)),
+            else => None,
+        }
+    }
+
+    /// Runs a callback or the subscribers for a bus event
+    pub fn handle(&mut self, incoming: Incoming) -> anyhow::Result<()> {
+        match incoming {
+            Incoming::Callback(callback) => self.handle_callback(callback),
+            Incoming::Event(event) => self.handle_event(event),
+        }
     }
 
     /// Returns the next callback that is already queued
     pub fn try_recv_callback(&mut self) -> Option<Callback> {
         self.callback_rx.try_recv().ok()
+    }
+
+    /// Returns the next event on the bus that is already queued
+    pub fn try_recv_event(&mut self) -> Option<Message> {
+        self.bus_rx.try_recv()
+    }
+
+    /// Runs the subscribers for an event from the bus
+    pub fn handle_event(&mut self, (type_, data): Message) -> anyhow::Result<()> {
+        self.events.handle_any(&mut self.state, type_, data)
     }
 
     /// Runs a single callback
@@ -125,7 +157,7 @@ impl CallbackSender {
     }
 }
 
-/// The async runtime that background work runs on
+/// The async runtime for background work
 #[derive(Clone)]
 pub struct Runtime(pub tokio::runtime::Handle);
 

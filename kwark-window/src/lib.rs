@@ -13,6 +13,13 @@ use ratatui::widgets::{Clear, Widget};
 
 pub type WindowPipeline = kwark_render::WindowPipeline<State, WindowCtx>;
 
+/// An event when the focused window changes
+#[derive(Debug, Clone, Copy)]
+pub struct FocusChanged {
+    pub from: LeafId,
+    pub to: LeafId,
+}
+
 /// state carried by a [`Window`]'s [`buffer::List`]
 #[derive(Default, Clone, Copy)]
 pub struct BufView {

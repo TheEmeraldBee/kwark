@@ -43,12 +43,12 @@ pub fn write(s: &mut State, args: &Args) -> anyhow::Result<()> {
     write_then(s, args, |_| Ok(()))
 }
 
-/// Writes the active buffer, then quits once the write succeeds
+/// Writes the active buffer, then quits
 pub fn write_quit(s: &mut State, args: &Args) -> anyhow::Result<()> {
     write_then(s, args, |s| quit(s, &Args::default()))
 }
 
-/// Writes the active buffer in the background, then runs `then` once the write succeeds
+/// Writes the active buffer in the background, then runs `then`
 pub fn write_then(
     s: &mut State,
     args: &Args,

@@ -18,7 +18,7 @@ enum Timer {
     Every(Duration, EveryFn),
 }
 
-/// A timer whose deadline passed, ready to run
+/// A timer that is due
 pub struct Due {
     id: TimerId,
     at: Instant,
@@ -38,7 +38,7 @@ impl Due {
     }
 }
 
-/// Delayed and repeated callbacks on the main thread
+/// Delayed and repeating callbacks
 #[derive(Default)]
 pub struct Timers {
     heap: BinaryHeap<Reverse<(Instant, TimerId)>>,
@@ -150,7 +150,7 @@ impl Timers {
         }
     }
 
-    /// Puts a repeating timer back on schedule after it ran
+    /// Reschedules a repeating timer
     pub fn finish(&mut self, due: Due) {
         let cancelled = self.running_cancelled;
         self.running = None;
@@ -193,7 +193,7 @@ mod test {
 
     fn state() -> State {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        State::new(tx)
+        State::new(tx, kwark_bus::channel().0)
     }
 
     #[test]

@@ -643,6 +643,7 @@ dependencies = [
  "crossterm",
  "futures-util",
  "kwark-buffer",
+ "kwark-bus",
  "kwark-core",
  "kwark-plugins",
  "kwark-theme",
@@ -657,11 +658,21 @@ dependencies = [
 name = "kwark-buffer"
 version = "0.0.0"
 dependencies = [
+ "kwark-bus",
  "kwark-render",
  "kwark-text",
  "kwark-tree-sitter",
  "ratatui",
+ "ropey",
  "thiserror 2.0.18",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "kwark-bus"
+version = "0.0.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
@@ -671,6 +682,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "kwark-buffer",
+ "kwark-bus",
  "kwark-input",
  "kwark-render",
  "kwark-text",
@@ -696,6 +708,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "kwark-bus",
  "thiserror 2.0.18",
 ]
 
@@ -771,6 +784,7 @@ name = "kwark-window"
 version = "0.0.0"
 dependencies = [
  "kwark-buffer",
+ "kwark-bus",
  "kwark-core",
  "kwark-render",
  "ratatui",

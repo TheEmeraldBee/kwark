@@ -5,6 +5,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use kwark_bus::EventSender;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{Callback, CallbackSender};
@@ -34,13 +35,15 @@ impl Flags {
 
 pub struct State {
     callback_tx: UnboundedSender<Callback>,
+    bus: EventSender,
     inner: HashMap<TypeId, Box<dyn Any>>,
 }
 
 impl State {
-    pub fn new(callback_tx: UnboundedSender<Callback>) -> Self {
+    pub fn new(callback_tx: UnboundedSender<Callback>, bus: EventSender) -> Self {
         let mut val = Self {
             callback_tx,
+            bus,
             inner: HashMap::default(),
         };
 
@@ -81,6 +84,11 @@ impl State {
     /// Returns the sender for a callback fn to be put into a thread/event
     pub fn sender(&self) -> CallbackSender {
         CallbackSender(self.callback_tx.clone())
+    }
+
+    /// Returns a sender for the event bus
+    pub fn bus(&self) -> EventSender {
+        self.bus.clone()
     }
 
     /// Removes one or more types from the state, returning a guard that puts them back

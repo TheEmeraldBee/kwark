@@ -34,7 +34,7 @@ fn commit_changes(state: &mut State) {
     buf.commit_change();
 }
 
-/// Reads a file in the background, then shows it in the active window
+/// Opens a file in the active window
 fn open_file(s: &mut State, path: PathBuf) {
     s.spawn_blocking(
         move || BufferEntry::new_file(path),

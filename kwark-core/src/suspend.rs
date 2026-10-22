@@ -2,7 +2,7 @@ use crate::State;
 
 pub type SuspendFn = Box<dyn FnOnce(&mut State) -> anyhow::Result<()>>;
 
-/// Work that runs while another program owns the terminal
+/// Work queued for when another program owns the terminal
 #[derive(Default)]
 pub struct SuspendQueue(Vec<SuspendFn>);
 
@@ -18,7 +18,7 @@ impl SuspendQueue {
 }
 
 impl State {
-    /// Runs `f` with the terminal handed back to the shell, for programs such as fzf
+    /// Runs `f` while the shell owns the terminal
     pub fn suspend(&mut self, f: impl FnOnce(&mut State) -> anyhow::Result<()> + 'static) {
         self.get::<&mut SuspendQueue>().0.push(Box::new(f));
     }

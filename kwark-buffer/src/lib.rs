@@ -1,5 +1,11 @@
-use std::{collections::HashMap, fmt::Display, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fmt::Display,
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
+use kwark_bus::EventSender;
 use kwark_text::{self as text, BoundCursorSet, BufferKind};
 use kwark_render::{HitArgs, Pipeline, RenderArgs, Viewport};
 use kwark_tree_sitter::prelude::*;
@@ -34,6 +40,9 @@ pub enum Buffer {
 
         /// The buffer version the tree was last parsed at
         parsed_version: u128,
+
+        /// Ticket of the running background parse
+        parse_ticket: Option<u64>,
     },
     Widget(ratatui::buffer::Buffer),
 }
@@ -48,8 +57,43 @@ impl From<text::BufferEntry> for Buffer {
             tree: None,
 
             parsed_version: 0,
+
+            parse_ticket: None,
         }
     }
+}
+
+static NEXT_TICKET: AtomicU64 = AtomicU64::new(0);
+
+/// A full parse of a buffer's text
+pub struct ParseJob {
+    ticket: u64,
+    lang: String,
+    rope: ropey::Rope,
+    version: u128,
+    store: LanguageStore,
+}
+
+impl ParseJob {
+    /// Parses the snapshot
+    pub fn run(mut self) -> ParsedTree {
+        let tree = SyntaxTree::parse(&mut self.store, &self.lang, &self.rope);
+
+        ParsedTree {
+            ticket: self.ticket,
+            version: self.version,
+            tree,
+            store: self.store,
+        }
+    }
+}
+
+/// The result of a [`ParseJob`]
+pub struct ParsedTree {
+    ticket: u64,
+    version: u128,
+    tree: core::result::Result<SyntaxTree, kwark_tree_sitter::error::Error>,
+    store: LanguageStore,
 }
 
 impl Buffer {
@@ -65,32 +109,103 @@ impl Buffer {
         }
     }
 
-    /// Reparses the tree if the buffer's text has changed since the last parse,
-    /// or parses it for the first time if it has no tree yet
+    /// Returns the version of the buffer's text
+    pub fn version(&self) -> u128 {
+        match self {
+            Self::Text { buf, .. } => buf.buffer.version(),
+            Self::Widget(_) => 0,
+        }
+    }
+
+    /// Returns a full parse job if the buffer needs one
+    pub fn parse_job(&mut self, store: &LanguageStore) -> Result<Option<ParseJob>> {
+        let Self::Text {
+            id,
+            buf,
+            tree: None,
+            parse_ticket: parse_ticket @ None,
+            ..
+        } = self
+        else {
+            return Ok(None);
+        };
+
+        let path = match id {
+            text::BufferKind::File(path) => Some(path.as_path()),
+            text::BufferKind::Scratch(_) => None,
+        };
+        let first_line = buf.buffer.rope().get_line(0).map(|l| l.to_string());
+
+        let Some(lang) = store.detect(path, first_line.as_deref()) else {
+            return Ok(None);
+        };
+
+        let ticket = NEXT_TICKET.fetch_add(1, Ordering::Relaxed);
+        let job = ParseJob {
+            ticket,
+            lang: lang.to_string(),
+            rope: buf.buffer.rope().clone(),
+            version: buf.buffer.version(),
+            store: store.fork()?,
+        };
+
+        *parse_ticket = Some(ticket);
+
+        Ok(Some(job))
+    }
+
+    /// Installs a finished parse, caught up to the current text
+    pub fn install(&mut self, parsed: ParsedTree, store: &mut LanguageStore) -> Result<()> {
+        let ParsedTree {
+            ticket,
+            version,
+            tree: parsed_tree,
+            store: worker_store,
+        } = parsed;
+
+        store.absorb_queries(worker_store);
+
+        let Self::Text {
+            buf,
+            tree,
+            parsed_version,
+            parse_ticket,
+            ..
+        } = self
+        else {
+            return Ok(());
+        };
+
+        if *parse_ticket != Some(ticket) {
+            return Ok(());
+        }
+
+        *parse_ticket = None;
+
+        let mut parsed_tree = parsed_tree?;
+
+        let current = buf.buffer.version();
+        if version != current {
+            let edits = buf.buffer.edits_since(version)?;
+            parsed_tree.reparse(store, edits, buf.buffer.rope())?;
+        }
+
+        *tree = Some(parsed_tree);
+        *parsed_version = current;
+
+        Ok(())
+    }
+
+    /// Reparses the tree if the buffer's text has changed since the last parse
     pub fn update(&mut self, store: &mut LanguageStore) -> Result<()> {
         match self {
             Self::Text {
-                id,
                 buf,
                 tree,
                 parsed_version,
                 ..
             } => {
                 let Some(tree) = tree else {
-                    let path = match id {
-                        text::BufferKind::File(path) => Some(path.as_path()),
-                        text::BufferKind::Scratch(_) => None,
-                    };
-                    let first_line = buf.buffer.rope().get_line(0).map(|l| l.to_string());
-
-                    let Some(lang) = store.detect(path, first_line.as_deref()) else {
-                        return Ok(());
-                    };
-                    let lang = lang.to_string();
-
-                    *tree = Some(SyntaxTree::parse(store, &lang, buf.buffer.rope())?);
-                    *parsed_version = buf.buffer.version();
-
                     return Ok(());
                 };
 
@@ -228,14 +343,56 @@ impl Display for ID {
     }
 }
 
+/// An event when a buffer appears in storage
+#[derive(Debug, Clone)]
+pub struct BufferOpened {
+    pub id: ID,
+}
+
+/// An event when a buffer's text changes
+#[derive(Debug, Clone)]
+pub struct BufferChanged {
+    pub id: ID,
+    pub version: u128,
+}
+
+/// An event when a buffer leaves storage
+#[derive(Debug, Clone)]
+pub struct BufferClosed {
+    pub id: ID,
+}
+
 /// A basic storage for a list of Buffers
-#[derive(Default)]
 pub struct Storage {
     next_id: usize,
     inner: HashMap<ID, Buffer>,
+
+    /// The text version last reported for each buffer
+    reported: HashMap<ID, u128>,
+    bus: EventSender,
 }
 
 impl Storage {
+    /// Creates an empty storage
+    pub fn new(bus: EventSender) -> Self {
+        Self {
+            next_id: 0,
+            inner: HashMap::new(),
+            reported: HashMap::new(),
+            bus,
+        }
+    }
+
+    fn put(&mut self, id: ID, buf: Buffer) {
+        self.reported.insert(id.clone(), buf.version());
+
+        if self.inner.insert(id.clone(), buf).is_some() {
+            self.bus.emit(BufferClosed { id: id.clone() });
+        }
+
+        self.bus.emit(BufferOpened { id });
+    }
+
     /// Iterate through all of the active buffers
     pub fn iter(&self) -> impl Iterator<Item = (&ID, &Buffer)> {
         self.inner.iter()
@@ -281,7 +438,7 @@ impl Storage {
         let buf = creator().into();
         let id = buf.create_index(&mut self.next_id);
 
-        self.inner.insert(id.clone(), buf);
+        self.put(id.clone(), buf);
 
         let buf = self
             .inner
@@ -296,9 +453,33 @@ impl Storage {
         let buf = buf.into();
         let id = buf.create_index(&mut self.next_id);
 
-        self.inner.insert(id.clone(), buf);
+        self.put(id.clone(), buf);
 
         id
+    }
+
+    /// Removes a buffer from storage, returning it if it existed
+    pub fn remove(&mut self, id: &ID) -> Option<Buffer> {
+        let buf = self.inner.remove(id)?;
+
+        self.reported.remove(id);
+        self.bus.emit(BufferClosed { id: id.clone() });
+
+        Some(buf)
+    }
+
+    /// Emits a [`BufferChanged`] for each buffer whose text changed since the last call
+    pub fn report_changes(&mut self) {
+        for (id, buf) in &self.inner {
+            let version = buf.version();
+
+            if self.reported.insert(id.clone(), version) != Some(version) {
+                self.bus.emit(BufferChanged {
+                    id: id.clone(),
+                    version,
+                });
+            }
+        }
     }
 
     /// Checks if the ID exists within the storage
@@ -436,5 +617,123 @@ impl<S> List<S> {
         self.entries.retain(|(x, _)| storage.has(x));
 
         self.active = self.active.min(self.entries.len().saturating_sub(1));
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn store() -> LanguageStore {
+        let mut store = LanguageStore::new(PathBuf::from(env!("CARGO_MANIFEST_DIR"))).unwrap();
+        store
+            .register("rust", Language::new(tree_sitter_rust::LANGUAGE))
+            .unwrap()
+            .with_shebangs(["rustrun"]);
+        store
+    }
+
+    fn rust_buffer(text: &str) -> Buffer {
+        let mut entry = text::BufferEntry::new_scratch("test");
+        entry
+            .buffer
+            .insert(0, 0, "#!/usr/bin/env rustrun\n")
+            .unwrap();
+        entry.buffer.insert(1, 0, text).unwrap();
+        Buffer::from(entry)
+    }
+
+    fn insert(buf: &mut Buffer, line: usize, text: &str) {
+        let Buffer::Text { buf, .. } = buf else {
+            unreachable!()
+        };
+        buf.buffer.insert(line, 0, text).unwrap();
+    }
+
+    fn tree_text(buf: &Buffer) -> Option<(u128, String)> {
+        let Buffer::Text {
+            tree: Some(tree),
+            parsed_version,
+            ..
+        } = buf
+        else {
+            return None;
+        };
+        Some((*parsed_version, tree.root().root_node().to_sexp()))
+    }
+
+    fn events(rx: &mut kwark_bus::EventReceiver) -> Vec<&'static str> {
+        let mut out = vec![];
+
+        while let Some((_, event)) = rx.try_recv() {
+            if event.is::<BufferOpened>() {
+                out.push("opened");
+            } else if event.is::<BufferChanged>() {
+                out.push("changed");
+            } else if event.is::<BufferClosed>() {
+                out.push("closed");
+            }
+        }
+
+        out
+    }
+
+    #[test]
+    pub fn storage_reports_buffer_lifecycle() {
+        let (bus, mut rx) = kwark_bus::channel();
+        let mut storage = Storage::new(bus);
+
+        let id = storage.insert(text::BufferEntry::new_scratch("a"));
+        storage.report_changes();
+        assert_eq!(events(&mut rx), ["opened"]);
+
+        insert(storage.get_mut(&id).unwrap(), 0, "x");
+        storage.report_changes();
+        storage.report_changes();
+        assert_eq!(events(&mut rx), ["changed"]);
+
+        storage.insert(text::BufferEntry::new_scratch("a"));
+        assert_eq!(events(&mut rx), ["closed", "opened"]);
+
+        storage.remove(&id);
+        assert_eq!(events(&mut rx), ["closed"]);
+    }
+
+    #[test]
+    pub fn parse_job_only_once() {
+        let store = store();
+        let mut buf = rust_buffer("fn main() {}");
+
+        assert!(buf.parse_job(&store).unwrap().is_some());
+        assert!(buf.parse_job(&store).unwrap().is_none());
+    }
+
+    #[test]
+    pub fn install_catches_up_with_edits() {
+        let mut store = store();
+        let mut buf = rust_buffer("fn main() {}\n");
+
+        let job = buf.parse_job(&store).unwrap().unwrap();
+        insert(&mut buf, 2, "fn other() {}\n");
+
+        let parsed = std::thread::spawn(move || job.run()).join().unwrap();
+        buf.install(parsed, &mut store).unwrap();
+
+        let (version, sexp) = tree_text(&buf).unwrap();
+        assert_eq!(version, buf.version());
+        assert_eq!(sexp.matches("function_item").count(), 2);
+    }
+
+    #[test]
+    pub fn install_ignores_a_stale_ticket() {
+        let mut store = store();
+        let mut old = rust_buffer("fn main() {}");
+        let mut new = rust_buffer("fn main() {}");
+
+        let stale = old.parse_job(&store).unwrap().unwrap().run();
+        new.parse_job(&store).unwrap().unwrap();
+        new.install(stale, &mut store).unwrap();
+
+        assert!(tree_text(&new).is_none());
     }
 }
