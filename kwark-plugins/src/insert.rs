@@ -45,12 +45,11 @@ impl kwark_core::Plugin for Plugin {
                 return Ok(());
             };
 
-            if !opts.extend {
-                let delta = if before { -1 } else { 1 };
-                buf.move_(0, delta, &opts.wrap(true).extend(true));
+            if opts.extend {
+                buf.delete(&opts);
+            } else {
+                buf.delete_char(before, &opts);
             }
-
-            buf.delete(&opts);
 
             Ok(())
         });

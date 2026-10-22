@@ -48,9 +48,9 @@ impl Highlighter<State> for Cursor {
             }
 
             let sel_start = cursor.start().max(line_start);
-            let sel_end = cursor.end().min(line_end);
+            let sel_end = (cursor.end() + 1).min(line_end);
 
-            if sel_start < sel_end {
+            if cursor.start() != cursor.end() && sel_start < sel_end {
                 spans.push(StyleSpan {
                     range: sel_start - line_start..sel_end - line_start,
                     style: Style::default().bg(Color::Green),

@@ -7,6 +7,29 @@ fn shift_clamped(buffer: &Buffer, pivot: usize, pos: usize, distance: isize) -> 
     buffer.clamp(shifted)
 }
 
+/// Returns the last line, skipping the empty line after a trailing newline
+fn last_line(buf: &Buffer) -> usize {
+    let lines = buf.rope().len_lines();
+
+    if lines > 1 && buf.rope().line(lines - 1).len_chars() == 0 {
+        lines - 2
+    } else {
+        lines - 1
+    }
+}
+
+/// Returns the column of the last char on `line` before its line break
+fn last_col(buf: &Buffer, line: usize) -> usize {
+    let text = buf.rope().line(line);
+    let breaks = text
+        .chars_at(text.len_chars())
+        .reversed()
+        .take_while(|c| matches!(c, '\n' | '\r'))
+        .count();
+
+    (text.len_chars() - breaks).saturating_sub(1)
+}
+
 /// A set of options that, when interacting with a cursor, should activate
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
 pub struct CursorOptions {
@@ -73,6 +96,16 @@ impl CursorOptions {
 
         self
     }
+}
+
+/// A line or column for [`CursorSet::goto`] to move to
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// The given index, clamped to what is valid
+    At(usize),
+
+    /// The last line, or the last char of the line
+    End,
 }
 
 /// A basic Cursor type that holds data needed to handle cursors
@@ -295,6 +328,87 @@ impl CursorSet {
         })
     }
 
+    /// Moves the cursor to the anchor and caret returned by `target`, staying on its line unless wrap is true
+    pub fn select_to(
+        &mut self,
+        buf: &Buffer,
+        options: &CursorOptions,
+        target: impl Fn(usize, usize, &ropey::Rope) -> (usize, usize),
+    ) {
+        self.apply(options.all, buf, |set, buf| {
+            let idx = set.primary;
+            let Cursor { anchor, caret, .. } = set.cursors[idx];
+
+            let (new_anchor, new_caret) = target(anchor, caret, buf.rope());
+            let mut new_anchor = buf.clamp(new_anchor);
+            let mut new = buf.clamp(new_caret);
+
+            if !options.wrap {
+                let (line, _) = buf.char_to_line_col(caret);
+                let start = buf.line_col_to_char(line, 0);
+                let end = buf.line_col_to_char(line, buf.max_col(line));
+
+                new_anchor = new_anchor.clamp(start, end);
+                new = new.clamp(start, end);
+            }
+
+            let cursor = &mut set.cursors[idx];
+            cursor.caret = new;
+
+            if !options.extend {
+                cursor.anchor = new_anchor;
+            }
+
+            cursor.desired_col = buf.char_to_line_col(new).1;
+        })
+    }
+
+    /// Moves the cursor to the given line and column, keeping whichever is `None`
+    pub fn goto(
+        &mut self,
+        buf: &Buffer,
+        line: Option<Target>,
+        col: Option<Target>,
+        options: &CursorOptions,
+    ) {
+        if line.is_none() && col.is_none() {
+            return;
+        }
+
+        self.apply(options.all, buf, |set, buf| {
+            let idx = set.primary;
+            let cursor = &set.cursors[idx];
+
+            let last_line = last_line(buf);
+            let target_line = match line {
+                None => buf.char_to_line_col(cursor.caret).0,
+                Some(Target::At(line)) => line.min(last_line),
+                Some(Target::End) => last_line,
+            };
+
+            let max_col = buf.max_col(target_line);
+            let (col, desired_col) = match col {
+                None => (cursor.desired_col.min(max_col), cursor.desired_col),
+                Some(Target::At(col)) => (col.min(max_col), col),
+                Some(Target::End) => {
+                    let col = last_col(buf, target_line);
+                    (col, col)
+                }
+            };
+
+            let caret = buf.line_col_to_char(target_line, col);
+
+            let cursor = &mut set.cursors[idx];
+            cursor.caret = caret;
+
+            if !options.extend {
+                cursor.anchor = caret;
+            }
+
+            cursor.desired_col = desired_col;
+        })
+    }
+
     /// Sets **only** the primary cursor's position to the given line/col, clamping line then column.
     /// Ignores the value set in [`CursorOptions::all`]
     pub fn set(&mut self, buf: &Buffer, line: usize, col: usize, options: &CursorOptions) {
@@ -366,24 +480,46 @@ impl CursorSet {
             let idx = set.primary;
             let cursor = &set.cursors[idx];
             let start = cursor.start();
-            let end = cursor.end();
+            let end = (cursor.end() + 1).min(buf.rope().len_chars());
 
-            if start == end {
-                return;
-            }
-
-            let (line, col) = buf.char_to_line_col(start);
-            let len = end - start;
-
-            buf.delete(line, col, len)
-                .expect("delete should be appliable");
-
-            set.cursors[idx].caret = start;
-            set.cursors[idx].anchor = start;
-            set.cursors[idx].desired_col = col;
-
-            set.move_after(buf, idx, -(len as isize));
+            set.delete_range(buf, idx, start, end);
         });
+    }
+
+    /// Deletes the char under the caret, or the char before it if `before` is true
+    pub fn delete_char(&mut self, buffer: &mut Buffer, before: bool, options: &CursorOptions) {
+        self.apply_mut(options.all, buffer, |set, buf| {
+            let idx = set.primary;
+            let caret = set.cursors[idx].caret;
+
+            let start = match before {
+                true => caret.checked_sub(1),
+                false => Some(caret),
+            };
+
+            if let Some(start) = start {
+                let end = (start + 1).min(buf.rope().len_chars());
+                set.delete_range(buf, idx, start, end);
+            }
+        });
+    }
+
+    fn delete_range(&mut self, buf: &mut Buffer, idx: usize, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+
+        let (line, col) = buf.char_to_line_col(start);
+        let len = end - start;
+
+        buf.delete(line, col, len)
+            .expect("delete should be appliable");
+
+        self.cursors[idx].caret = start;
+        self.cursors[idx].anchor = start;
+        self.cursors[idx].desired_col = col;
+
+        self.move_after(buf, idx, -(len as isize));
     }
 
     /// Swaps the head and tail (anchor and caret) of the cursor
@@ -395,6 +531,18 @@ impl CursorSet {
         } else {
             let cursor = &mut self.cursors[self.primary];
             std::mem::swap(&mut cursor.anchor, &mut cursor.caret);
+        }
+    }
+
+    /// Collapses the cursor's selection onto its caret
+    pub fn clear_selection(&mut self, options: &CursorOptions) {
+        if options.all {
+            for cursor in &mut self.cursors {
+                cursor.anchor = cursor.caret;
+            }
+        } else {
+            let cursor = &mut self.cursors[self.primary];
+            cursor.anchor = cursor.caret;
         }
     }
 
@@ -497,6 +645,20 @@ impl<'a> BoundCursorSet<'a> {
         self.set.move_(self.buf, lines, columns, options);
     }
 
+    /// Moves the cursor to the anchor and caret returned by `target`, staying on its line unless wrap is true
+    pub fn select_to(
+        &mut self,
+        options: &CursorOptions,
+        target: impl Fn(usize, usize, &ropey::Rope) -> (usize, usize),
+    ) {
+        self.set.select_to(self.buf, options, target);
+    }
+
+    /// Moves the cursor to the given line and column, keeping whichever is `None`
+    pub fn goto(&mut self, line: Option<Target>, col: Option<Target>, options: &CursorOptions) {
+        self.set.goto(self.buf, line, col, options);
+    }
+
     /// Sets **only** the primary cursor's position to the given line/col, clamping line then column.
     /// Ignores the value set in [`CursorOptions::all`]
     pub fn set(&mut self, line: usize, col: usize, options: &CursorOptions) {
@@ -530,9 +692,19 @@ impl<'a> BoundCursorSet<'a> {
         self.set.delete(self.buf, options);
     }
 
+    /// Deletes the char under the caret, or the char before it if `before` is true
+    pub fn delete_char(&mut self, before: bool, options: &CursorOptions) {
+        self.set.delete_char(self.buf, before, options);
+    }
+
     /// Swaps the head and tail (anchor and caret) of the cursor
     pub fn swap(&mut self, options: &CursorOptions) {
         self.set.swap(options);
+    }
+
+    /// Collapses the cursor's selection onto its caret
+    pub fn clear_selection(&mut self, options: &CursorOptions) {
+        self.set.clear_selection(options);
     }
 
     /// Duplicates the primary cursor, and sets the primary cursor to the new one
@@ -581,9 +753,105 @@ mod test {
         cursors.set(&buf, 0, 3, &CursorOptions::new());
         assert_eq!(cursors.cursors()[0].caret(), 3);
 
-        cursors.move_(&buf, 0, -1, &CursorOptions::new().wrap(true).extend(true));
-        cursors.delete(&mut buf, &CursorOptions::new());
+        cursors.delete_char(&mut buf, true, &CursorOptions::new());
 
         assert_eq!(buf.rope().to_string(), "ab");
+    }
+
+    #[test]
+    fn backspace_at_start_does_nothing() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+
+        buf.insert(0, 0, "abc").unwrap();
+        cursors.delete_char(&mut buf, true, &CursorOptions::new());
+
+        assert_eq!(buf.rope().to_string(), "abc");
+    }
+
+    #[test]
+    fn delete_includes_both_ends() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+
+        buf.insert(0, 0, "foo bar").unwrap();
+        cursors.set(&buf, 0, 4, &CursorOptions::new());
+        cursors.set(&buf, 0, 6, &CursorOptions::new().extend(true));
+        cursors.delete(&mut buf, &CursorOptions::new());
+
+        assert_eq!(buf.rope().to_string(), "foo ");
+
+        cursors.set(&buf, 0, 2, &CursorOptions::new());
+        cursors.set(&buf, 0, 0, &CursorOptions::new().extend(true));
+        cursors.delete(&mut buf, &CursorOptions::new());
+
+        assert_eq!(buf.rope().to_string(), " ");
+    }
+
+    #[test]
+    fn delete_without_selection_removes_caret_char() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+
+        buf.insert(0, 0, "abc").unwrap();
+        cursors.set(&buf, 0, 1, &CursorOptions::new());
+        cursors.delete(&mut buf, &CursorOptions::new());
+
+        assert_eq!(buf.rope().to_string(), "ac");
+    }
+
+    fn line_col(buf: &Buffer, cursors: &CursorSet) -> (usize, usize) {
+        buf.char_to_line_col(cursors.cursors()[0].caret())
+    }
+
+    #[test]
+    fn goto_line_keeps_desired_col() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+        let opts = CursorOptions::new();
+
+        buf.insert(0, 0, "abc\nlonger line\nxy\n").unwrap();
+        cursors.goto(&buf, Some(Target::At(1)), Some(Target::At(8)), &opts);
+        assert_eq!(line_col(&buf, &cursors), (1, 8));
+
+        cursors.goto(&buf, Some(Target::At(0)), None, &opts);
+        assert_eq!(line_col(&buf, &cursors), (0, 3));
+
+        cursors.goto(&buf, Some(Target::At(1)), None, &opts);
+        assert_eq!(line_col(&buf, &cursors), (1, 8));
+    }
+
+    #[test]
+    fn goto_end_skips_trailing_newline() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+        let opts = CursorOptions::new();
+
+        buf.insert(0, 0, "abc\nlonger line\nxy\n").unwrap();
+        cursors.goto(&buf, Some(Target::End), Some(Target::End), &opts);
+        assert_eq!(line_col(&buf, &cursors), (2, 1));
+
+        cursors.goto(&buf, Some(Target::At(1)), Some(Target::End), &opts);
+        assert_eq!(line_col(&buf, &cursors), (1, 10));
+
+        cursors.goto(&buf, Some(Target::At(100)), Some(Target::At(0)), &opts);
+        assert_eq!(line_col(&buf, &cursors), (2, 0));
+    }
+
+    #[test]
+    fn goto_extend_keeps_anchor() {
+        let mut buf = Buffer::default();
+        let mut cursors = CursorSet::new();
+
+        buf.insert(0, 0, "abc\ndef").unwrap();
+        cursors.goto(
+            &buf,
+            Some(Target::End),
+            None,
+            &CursorOptions::new().extend(true),
+        );
+
+        assert_eq!(cursors.cursors()[0].start(), 0);
+        assert_eq!(line_col(&buf, &cursors), (1, 0));
     }
 }

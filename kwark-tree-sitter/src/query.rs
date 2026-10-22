@@ -124,8 +124,7 @@ impl<T: Ranged> Mapped<T> {
     /// conflict, since `b` is always the higher-priority (or later-starting)
     /// item of the two
     pub fn combine(mut self, f: impl Fn(T, T) -> T) -> Combined<T> {
-        self.0
-            .sort_by_key(|t| (t.range().start, t.priority()));
+        self.0.sort_by_key(|t| (t.range().start, t.priority()));
 
         let mut out: Vec<T> = Vec::with_capacity(self.0.len());
 

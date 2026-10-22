@@ -177,48 +177,80 @@ fn main() -> anyhow::Result<()> {
         })?;
 
         normal.group(&["g"], "Goto Prefix", |g| {
-            g.bind_cmd(&["p"], "Goto Previous Buffer in Window", "buffer dir=prev")?;
-            g.bind_cmd(&["n"], "Goto Next Buffer in Window", "buffer dir=next")?;
+            g.bind_cmd(
+                &["p"],
+                "Goto Previous Buffer in Window",
+                ["buffer dir=prev"],
+            )?;
+            g.bind_cmd(&["n"], "Goto Next Buffer in Window", ["buffer dir=next"])?;
             Ok(())
         })?;
 
         normal.group(&[";"], "Shortcut Menu", |g| {
-            g.bind_cmd(&["Q"], "Quit the Editor", "quit")?;
-            g.bind_cmd(&["n"], "Split window right", "split dir=right")?;
-            g.bind_cmd(&["N"], "Split window down", "split dir=down")?;
+            g.bind_cmd(&["Q"], "Quit the Editor", ["quit"])?;
+            g.bind_cmd(&["n"], "Split window right", ["split dir=right"])?;
+            g.bind_cmd(&["N"], "Split window down", ["split dir=down"])?;
             g.bind_cmd(
                 &["q"],
                 "Close active buffer (closes the window if it was the last buffer in the window)",
-                "close_buffer",
+                ["close_buffer"],
             )?;
             Ok(())
         })?;
 
         // alt-h is one chord, not a sequence, so it stays flat rather than nested
-        normal.bind_cmd(&["alt-h"], "Focus window left", "focus dir=left")?;
-        normal.bind_cmd(&["alt-l"], "Focus window right", "focus dir=right")?;
-        normal.bind_cmd(&["alt-k"], "Focus window up", "focus dir=up")?;
-        normal.bind_cmd(&["alt-j"], "Focus window down", "focus dir=down")?;
+        normal.bind_cmd(&["alt-h"], "Focus window left", ["focus dir=left"])?;
+        normal.bind_cmd(&["alt-l"], "Focus window right", ["focus dir=right"])?;
+        normal.bind_cmd(&["alt-k"], "Focus window up", ["focus dir=up"])?;
+        normal.bind_cmd(&["alt-j"], "Focus window down", ["focus dir=down"])?;
         normal.bind_cmd(
             &["alt-H"],
             "Move border left",
-            "resize dir=left amount=0.05",
+            ["resize dir=left amount=0.05"],
         )?;
         normal.bind_cmd(
             &["alt-L"],
             "Move border right",
-            "resize dir=right amount=0.05",
+            ["resize dir=right amount=0.05"],
         )?;
-        normal.bind_cmd(&["alt-K"], "Move border up", "resize dir=up amount=0.05")?;
+        normal.bind_cmd(&["alt-K"], "Move border up", ["resize dir=up amount=0.05"])?;
         normal.bind_cmd(
             &["alt-J"],
             "Move border down",
-            "resize dir=down amount=0.05",
+            ["resize dir=down amount=0.05"],
         )?;
 
-        normal.bind_cmd(&["u"], "Undo", "undo")?;
-        normal.bind_cmd(&["U"], "Redo", "redo")?;
-        normal.bind_cmd(&["c"], "Toggle All-Cursor Mode", "toggle_all_cursors")?;
+        normal.bind_cmd(&["w"], "Move word", ["motion kind=w"])?;
+        normal.bind_cmd(&["W"], "Move WORD", ["motion kind=W"])?;
+        normal.bind_cmd(&["e"], "Move word end", ["motion kind=e"])?;
+        normal.bind_cmd(&["E"], "Move WORD end", ["motion kind=E"])?;
+        normal.bind_cmd(&["b"], "Move word back", ["motion kind=b"])?;
+        normal.bind_cmd(&["B"], "Move WORD back", ["motion kind=B"])?;
+
+        normal.bind_cmd(&["alt-w"], "Extend word", ["motion kind=w extend=true"])?;
+        normal.bind_cmd(&["alt-W"], "Extend WORD", ["motion kind=W extend=true"])?;
+        normal.bind_cmd(&["alt-e"], "Extend word end", ["motion kind=e extend=true"])?;
+        normal.bind_cmd(&["alt-E"], "Extend WORD end", ["motion kind=E extend=true"])?;
+        normal.bind_cmd(
+            &["alt-b"],
+            "Extend word back",
+            ["motion kind=b extend=true"],
+        )?;
+        normal.bind_cmd(
+            &["alt-B"],
+            "Extend WORD back",
+            ["motion kind=B extend=true"],
+        )?;
+
+        normal.bind_cmd(&["."], "Go to Line End", ["set col=end"])?;
+        normal.bind_cmd(&[","], "Go to Line Start", ["set col=0"])?;
+
+        normal.bind_cmd(&[">"], "Extend Line End", ["set col=end extend=true"])?;
+        normal.bind_cmd(&["<"], "Extend Line Start", ["set col=0 extend=true"])?;
+
+        normal.bind_cmd(&["u"], "Undo", ["undo"])?;
+        normal.bind_cmd(&["U"], "Redo", ["redo"])?;
+        normal.bind_cmd(&["c"], "Toggle All-Cursor Mode", ["toggle_all_cursors"])?;
 
         normal.bind(&["i"], "Enter Insert Mode", |s| {
             s.get::<&mut InputState>().set_mode("insert");
@@ -234,8 +266,6 @@ fn main() -> anyhow::Result<()> {
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
             };
-
-            buf.move_(0, 1, &opts.extend(true).wrap(true));
 
             buf.delete(&opts);
 
@@ -255,7 +285,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        normal.bind(&[","], "Delete other cursors", |s| {
+        normal.bind(&["m"], "Delete other cursors", |s| {
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
             };
@@ -264,6 +294,28 @@ fn main() -> anyhow::Result<()> {
 
             Ok(())
         })?;
+
+        normal.bind_cmd(
+            &["o"],
+            "Insert newline below",
+            [
+                "set col=end",
+                "move dir=right",
+                "insert text=\"\n\"",
+                "mode insert",
+            ],
+        )?;
+
+        normal.bind_cmd(
+            &["O"],
+            "Insert newline below",
+            [
+                "set col=0",
+                "insert text=\"\n\"",
+                "move dir=up",
+                "mode insert",
+            ],
+        )?;
 
         normal.bind(&["["], "Change Cursor Up", |s| {
             let Some(mut buf) = active_buffer(s) else {
@@ -334,7 +386,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        insert.bind_cmd(&["backspace"], "Delete Char", "delete before=true")?;
+        insert.bind_cmd(&["backspace"], "Delete Char", ["delete before=true"])?;
 
         plugins::insert::bind_insert(insert, Vec::<&str>::new(), CursorOverrides::new())?;
     }

@@ -210,7 +210,7 @@ pub trait InputTreeExt {
         &mut self,
         keys: &[&str],
         desc: impl Into<String>,
-        command: impl Into<String>,
+        commands: impl IntoIterator<Item = impl Into<String>>,
     ) -> anyhow::Result<()>;
 
     /// Begin a builder for a group under `key`
@@ -229,14 +229,18 @@ impl InputTreeExt for InputTree {
         &mut self,
         keys: &[&str],
         desc: impl Into<String>,
-        command: impl Into<String>,
+        commands: impl IntoIterator<Item = impl Into<String>>,
     ) -> anyhow::Result<()> {
-        let command = command.into();
+        let commands = commands.into_iter().map(|x| x.into()).collect::<Vec<_>>();
 
         self.bind(keys, desc, move |s: &mut State| {
             let mut taken = s.scope::<(CommandRegistry,)>();
             let ((registry,), state) = taken.split();
-            registry.execute(state, &command)
+            for command in commands.iter() {
+                registry.execute(state, command)?;
+            }
+
+            Ok(())
         })
     }
 
@@ -294,7 +298,7 @@ impl<'a> InputTreeExt for Group<'a> {
         &mut self,
         keys: &[&str],
         desc: impl Into<String>,
-        command: impl Into<String>,
+        command: impl IntoIterator<Item = impl Into<String>>,
     ) -> anyhow::Result<()> {
         self.tree.bind_cmd(
             self.keys(keys)

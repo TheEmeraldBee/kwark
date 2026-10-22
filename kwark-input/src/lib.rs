@@ -2,9 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use kwark_bus::EventSender;
 
-use crossterm::event::{
-    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 mod parse;
 

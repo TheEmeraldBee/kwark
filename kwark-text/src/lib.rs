@@ -13,6 +13,9 @@ pub(crate) use operation::*;
 mod cursor;
 pub use cursor::*;
 
+pub use ropey;
+pub use ropey::{Rope, RopeSlice};
+
 pub struct BufferEntry {
     pub buffer: Buffer,
     kind: BufferKind,

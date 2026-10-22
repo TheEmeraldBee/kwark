@@ -147,7 +147,7 @@ pub fn init(editor: &mut Editor) {
             if let Some(mut buf) = storage.get_mut(&id).and_then(|b| b.as_text()) {
                 //TODO: Make this select a word
                 let (start, end) = chunk_bounds(hit.col);
-                let end = end.min(buf.max_col(hit.line));
+                let end = (end - 1).min(buf.max_col(hit.line));
 
                 buf.set(hit.line, start, &CursorOptions::new());
                 buf.set(hit.line, end, &CursorOptions::new().extend(true));
@@ -264,11 +264,11 @@ pub fn init(editor: &mut Editor) {
                     let (hit_start, hit_end) = chunk_bounds(hit.col);
 
                     if (hit.line, hit_start) >= (start_line, anchor_start) {
-                        let end = hit_end.min(buf.max_col(hit.line));
+                        let end = (hit_end - 1).min(buf.max_col(hit.line));
                         buf.set(start_line, anchor_start, &CursorOptions::new());
                         buf.set(hit.line, end, &CursorOptions::new().extend(true));
                     } else {
-                        let start = anchor_end.min(buf.max_col(start_line));
+                        let start = (anchor_end - 1).min(buf.max_col(start_line));
                         buf.set(start_line, start, &CursorOptions::new());
                         buf.set(hit.line, hit_start, &CursorOptions::new().extend(true));
                     }

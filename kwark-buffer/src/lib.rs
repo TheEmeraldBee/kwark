@@ -6,8 +6,8 @@ use std::{
 };
 
 use kwark_bus::EventSender;
-use kwark_text::{self as text, BoundCursorSet, BufferKind};
 use kwark_render::{HitArgs, Pipeline, RenderArgs, Viewport};
+use kwark_text::{self as text, BoundCursorSet, BufferKind};
 use kwark_tree_sitter::prelude::*;
 
 #[derive(Debug, thiserror::Error)]

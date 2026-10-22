@@ -217,19 +217,28 @@ pub struct LanguageBuilder<'a> {
 impl LanguageBuilder<'_> {
     /// Adds file extensions (without the leading `.`) that detect this language
     pub fn with_extensions(mut self, exts: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.stored().extensions.extend(exts.into_iter().map(Into::into));
+        self.stored()
+            .extensions
+            .extend(exts.into_iter().map(Into::into));
         self
     }
 
     /// Adds exact file names (e.g. `Dockerfile`) that detect this language
     pub fn with_filenames(mut self, names: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.stored().filenames.extend(names.into_iter().map(Into::into));
+        self.stored()
+            .filenames
+            .extend(names.into_iter().map(Into::into));
         self
     }
 
     /// Adds shebang interpreter names (e.g. `bash`) that detect this language
-    pub fn with_shebangs(mut self, interpreters: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.stored().shebangs.extend(interpreters.into_iter().map(Into::into));
+    pub fn with_shebangs(
+        mut self,
+        interpreters: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.stored()
+            .shebangs
+            .extend(interpreters.into_iter().map(Into::into));
         self
     }
 
