@@ -14,12 +14,7 @@ use kwark::{
 };
 use ratatui::{layout::Position, widgets::BorderType};
 
-mod highlighters;
 mod theme;
-use highlighters::*;
-
-mod renderers;
-use renderers::*;
 
 fn active_buffer(s: &mut State) -> Option<BoundCursorSet<'_>> {
     let id = s.get::<&WindowLayout>().active().selected()?;
@@ -363,12 +358,8 @@ fn main() -> anyhow::Result<()> {
 
         pipeline
             .highlighters
-            .push(TSHighlighter)
-            .push(CursorHighlighter);
-
-        pipeline
-            .renderers
-            .push(HeaderRenderer::new().block::<CursorTag>());
+            .push(ui::highlighters::TreeSitter)
+            .push(ui::highlighters::Cursor);
 
         pipeline
             .gutters

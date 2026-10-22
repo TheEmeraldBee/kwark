@@ -9,6 +9,7 @@ kwark-core.workspace = true
 kwark-render.workspace = true
 kwark-theme.workspace = true
 kwark-window.workspace = true
+kwark-tree-sitter.workspace = true
 
 ratatui.workspace = true
 

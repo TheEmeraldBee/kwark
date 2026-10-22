@@ -1,17 +1,18 @@
 use std::ops::Range;
 
-use kwark::prelude::*;
+use kwark_core::State;
+use kwark_render::*;
+use kwark_theme::Theme;
+use kwark_tree_sitter::{query::Ranged, store::LanguageStore};
 use ratatui::style::Style;
-use render::*;
-use tree_sitter::*;
 
-struct TSHighlight {
+struct TreeSitterHighlight {
     range: Range<usize>,
     style: Style,
     priority: usize,
 }
 
-impl Ranged for TSHighlight {
+impl Ranged for TreeSitterHighlight {
     fn range(&self) -> Range<usize> {
         self.range.clone()
     }
@@ -21,9 +22,9 @@ impl Ranged for TSHighlight {
     }
 }
 
-pub struct TSHighlighter;
+pub struct TreeSitter;
 
-impl Highlighter<State> for TSHighlighter {
+impl Highlighter<State> for TreeSitter {
     fn highlight(&mut self, state: &mut State, ctx: &LineCtx) -> Option<Highlight> {
         let (theme, store) = state.get::<(&Theme, &mut LanguageStore)>();
 
@@ -39,7 +40,7 @@ impl Highlighter<State> for TSHighlighter {
             .flat_map(|m| {
                 let priority = m.pattern_index();
                 m.iter_captures()
-                    .map(|x| TSHighlight {
+                    .map(|x| TreeSitterHighlight {
                         range: x.1.byte_range(),
                         style: theme.get(&format!("ts.{}", x.0)),
                         priority,
@@ -49,7 +50,7 @@ impl Highlighter<State> for TSHighlighter {
             .combine(|a, b| {
                 let combined_style = combine([a.style, b.style]);
                 let range = a.range.start.min(b.range.start)..a.range.end.max(b.range.end);
-                TSHighlight {
+                TreeSitterHighlight {
                     range,
                     style: combined_style,
                     priority: a.priority.max(b.priority),

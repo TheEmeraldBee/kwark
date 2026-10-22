@@ -775,6 +775,7 @@ dependencies = [
  "kwark-core",
  "kwark-render",
  "kwark-theme",
+ "kwark-tree-sitter",
  "kwark-window",
  "ratatui",
 ]

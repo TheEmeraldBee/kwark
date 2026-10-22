@@ -7,3 +7,7 @@ pub mod gutters;
 pub mod borders;
 
 pub mod bar;
+
+pub mod renderers;
+
+pub mod highlighters;

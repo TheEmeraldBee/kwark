@@ -1,4 +1,4 @@
-use kwark::prelude::{text::CursorOptions, *};
+use kwark_core::prelude::{text::CursorOptions, *};
 use ratatui::style::{Color, Modifier, Style};
 use render::*;
 
@@ -6,9 +6,9 @@ use render::*;
 pub struct CursorTag;
 
 /// Highlights the character under every cursor in the buffer
-pub struct CursorHighlighter;
+pub struct Cursor;
 
-impl Highlighter<State> for CursorHighlighter {
+impl Highlighter<State> for Cursor {
     fn highlight(&mut self, state: &mut State, ctx: &LineCtx) -> Option<Highlight> {
         let is_all = state.get::<&CursorOptions>().is_all();
 
@@ -33,9 +33,6 @@ impl Highlighter<State> for CursorHighlighter {
 
             let on_empty_line = len == 0 && caret == line_start;
 
-            // A caret resting just past the last character is only this
-            // line's if the line itself has no newline terminator, i.e. it
-            // is the buffer's true final line
             let on_virtual_eof = len > 0
                 && caret == line_end
                 && line_end == ctx.rope.len_chars()
