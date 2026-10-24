@@ -8,8 +8,8 @@ use futures_util::StreamExt;
 
 use kwark_buffer as buffer;
 use kwark_core::{
-    Chord, Editor, EditorPipeline, Flags, InputState, MousePosition, Pipeline, Running, Runtime,
-    Step,
+    Chord, Editor, EditorPipeline, Flags, INPUT_TREE_FLAG, InputState, MousePosition, Overlays,
+    Pipeline, Running, Runtime, Step,
     commands::CommandRegistry,
     events,
     frame::{FrameClock, FrameInfo, Redraw},
@@ -23,16 +23,7 @@ use kwark_window::{WindowLayout, WindowPipeline};
 
 use crate::{syntax, terminal};
 
-use ratatui::{
-    macros::{horizontal, vertical},
-    prelude::*,
-    widgets::{Block, Borders, Clear, Paragraph},
-};
-
 const FRAME_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 60);
-
-/// Flag for the input tree popup
-const INPUT_TREE_FLAG: &str = "input_tree_show";
 
 /// Delay before the input tree popup shows
 const INPUT_TREE_DELAY: Duration = Duration::from_millis(400);
@@ -45,6 +36,7 @@ pub fn init() -> Editor {
     editor.state.insert(buffer::Storage::new(bus.clone()));
     editor.state.insert(Pipeline::default());
     editor.state.insert(EditorPipeline::default());
+    editor.state.insert(Overlays::default());
     editor.state.insert(WindowPipeline::default());
     editor.state.insert(InputState::new("normal", bus.clone()));
     editor.state.insert(Running(true));
@@ -364,31 +356,9 @@ fn draw_frame(editor: &mut Editor) -> anyhow::Result<()> {
         state.insert(windows);
         state.insert(editor_pipeline);
 
-        let (state, flags) = state.get::<(&InputState, &Flags)>();
-        if flags.get(INPUT_TREE_FLAG) {
-            let lines = state
-                .get_layer()
-                .iter()
-                .map(|(chord, desc)| {
-                    Line::raw(format!(
-                        "{} : {desc}",
-                        chord.map(|x| x.to_string()).unwrap_or("any".to_string())
-                    ))
-                })
-                .collect::<Vec<_>>();
-
-            let vertical_layer = vertical![==80%, ==20%].split(frame.area())[1];
-            let rect = horizontal![==60%, ==40%].split(vertical_layer)[1];
-
-            // Clear the area under the widget
-            frame.render_widget(Clear, rect);
-
-            // Render the actual widget
-            frame.render_widget(
-                Paragraph::new(lines).block(Block::new().borders(Borders::ALL)),
-                rect,
-            );
-        }
+        let mut overlays = state.take::<Overlays>();
+        overlays.render(state, frame.area(), frame.buffer_mut());
+        state.insert(overlays);
     })
 }
 

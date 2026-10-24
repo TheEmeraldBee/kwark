@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use kwark_text::Cursor;
 use kwark_tree_sitter::tree::SyntaxTree;
 use ropey::{Rope, RopeSlice};
@@ -6,6 +8,7 @@ use ropey::{Rope, RopeSlice};
 pub struct LineCtx<'a> {
     pub rope: &'a Rope,
     pub line: usize,
+    pub tab: Rc<str>,
     pub text: RopeSlice<'a>,
     pub width: u16,
     pub cursors: &'a [Cursor],

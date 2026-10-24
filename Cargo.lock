@@ -736,6 +736,8 @@ dependencies = [
  "kwark-tree-sitter",
  "ratatui",
  "ropey",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

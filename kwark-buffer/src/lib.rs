@@ -6,7 +6,7 @@ use std::{
 };
 
 use kwark_bus::EventSender;
-use kwark_render::{HitArgs, Pipeline, RenderArgs, Viewport};
+use kwark_render::{CellArgs, HitArgs, Pipeline, RenderArgs, Viewport};
 use kwark_text::{self as text, BoundCursorSet, BufferKind};
 use kwark_tree_sitter::prelude::*;
 
@@ -291,6 +291,33 @@ impl Buffer {
                     chr: buf.buffer.line_col_to_char(line, col),
                 })
             }
+            Self::Widget(_) => None,
+        }
+    }
+
+    /// Screen cell for a line and column, None when it is off screen
+    pub fn cell_of<S>(
+        &self,
+        pipeline: &mut Pipeline<S>,
+        state: &mut S,
+        rect: ratatui::layout::Rect,
+        scroll_top: usize,
+        (line, col): (usize, usize),
+    ) -> Option<ratatui::layout::Position> {
+        match self {
+            Self::Text {
+                buf, cursors, tree, ..
+            } => pipeline.cell_of(CellArgs {
+                rope: buf.buffer.rope(),
+                state,
+                scroll_top,
+                cursors: cursors.cursors(),
+                primary: cursors.primary(),
+                tree: tree.as_ref(),
+                area: rect,
+                line,
+                col,
+            }),
             Self::Widget(_) => None,
         }
     }

@@ -19,6 +19,10 @@ pub type InputState = kwark_input::InputState<State>;
 pub type InputTree = kwark_input::InputTree<State>;
 pub type Pipeline = kwark_render::Pipeline<State>;
 pub type EditorPipeline = kwark_render::EditorPipeline<State, ()>;
+pub type Overlays = kwark_render::Overlays<State>;
+
+/// Flag for the input tree popup
+pub const INPUT_TREE_FLAG: &str = "input_tree_show";
 
 /// An "installable" set of tooling to add to the editor
 pub trait Plugin {

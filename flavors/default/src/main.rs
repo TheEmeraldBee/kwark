@@ -455,6 +455,10 @@ fn main() -> anyhow::Result<()> {
             });
     }
 
+    editor
+        .get::<&mut Overlays>()
+        .push(ui::overlays::InputTreePopup);
+
     theme::init_theme(&mut editor);
 
     kwark::run(editor);

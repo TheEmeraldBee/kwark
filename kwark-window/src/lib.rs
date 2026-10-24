@@ -97,6 +97,21 @@ impl Window {
         self.bufs.state().and_then(|v| v.viewport)
     }
 
+    /// Screen cell for a line and column of the selected buffer, None when it is off screen
+    pub fn cell_of(
+        &self,
+        storage: &buffer::Storage,
+        pipeline: &mut Pipeline,
+        state: &mut State,
+        pos: (usize, usize),
+    ) -> Option<Position> {
+        let rect = self.content_rect?;
+        let buf = storage.get(&self.bufs.selected()?)?;
+        let scroll = self.bufs.state().map(|v| v.scroll).unwrap_or(0);
+
+        buf.cell_of(pipeline, state, rect, scroll, pos)
+    }
+
     /// Renders the window's content
     #[allow(clippy::too_many_arguments)]
     pub fn render(
@@ -173,4 +188,12 @@ impl Window {
             view.viewport = Some(viewport);
         }
     }
+}
+
+/// Screen cell for a line and column in a window's selected buffer, None when it is off screen
+pub fn cell_of(state: &mut State, leaf: LeafId, pos: (usize, usize)) -> Option<Position> {
+    let mut taken = state.scope::<(buffer::Storage, Pipeline, WindowLayout)>();
+    let ((storage, pipeline, windows), state) = taken.split();
+
+    windows.cell_of(leaf, storage, pipeline, state, pos)
 }

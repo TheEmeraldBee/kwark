@@ -18,3 +18,6 @@ pub use border::*;
 
 mod pipeline;
 pub use pipeline::*;
+
+mod overlay;
+pub use overlay::*;

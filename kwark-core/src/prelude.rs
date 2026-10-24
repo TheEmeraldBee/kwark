@@ -12,6 +12,7 @@ pub use crate::timers::Timers;
 pub use crate::commands::{ArgValue, Args, CommandRegistry, Group, InputTreeExt};
 
 pub use crate::EditorPipeline;
+pub use crate::Overlays;
 pub use crate::Pipeline;
 
 pub use crossterm::event::{KeyCode, KeyModifiers};

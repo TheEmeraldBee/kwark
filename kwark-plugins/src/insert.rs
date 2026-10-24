@@ -123,6 +123,12 @@ pub fn bind_insert<'a>(
         create_insertion("\n", overrides),
     )?;
 
+    tree.bind(
+        &join_prefix(&prefix, &"tab"),
+        "Insert Tab",
+        create_insertion("\t", overrides),
+    )?;
+
     tree.set_backup(
         |s, chord| {
             let opts = *s.get::<&CursorOptions>();

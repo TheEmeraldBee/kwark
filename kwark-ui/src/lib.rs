@@ -11,3 +11,5 @@ pub mod bar;
 pub mod renderers;
 
 pub mod highlighters;
+
+pub mod overlays;

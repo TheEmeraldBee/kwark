@@ -413,6 +413,21 @@ impl WindowLayout {
         Some((leaf, id, pos))
     }
 
+    /// Screen cell for a line and column in a window's selected buffer
+    pub fn cell_of(
+        &self,
+        leaf: LeafId,
+        storage: &buffer::Storage,
+        pipeline: &mut Pipeline,
+        state: &mut State,
+        pos: (usize, usize),
+    ) -> Option<Position> {
+        self.leaves
+            .get(&leaf)?
+            .window
+            .cell_of(storage, pipeline, state, pos)
+    }
+
     fn reparent(&mut self, child: Child, parent: Option<NodeId>) {
         match child {
             Child::Leaf(id) => self.leaves.get_mut(&id).unwrap().parent = parent,
@@ -458,5 +473,28 @@ mod test {
 
         layout.close(second);
         assert_eq!(focus_events(&mut rx), [(second, first)]);
+    }
+
+    #[test]
+    pub fn undrawn_window_has_no_cell() {
+        let mut editor = kwark_core::Editor::default();
+        let (bus, _rx) = kwark_bus::channel();
+        let mut storage = buffer::Storage::new(bus.clone());
+        let mut layout = WindowLayout::new(bus);
+
+        let id = storage.insert(kwark_core::prelude::text::BufferEntry::new_scratch("a"));
+        layout.active_mut().select(id);
+        layout.update_all(&storage);
+
+        let leaf = layout.active_id();
+        let cell = layout.cell_of(
+            leaf,
+            &storage,
+            &mut Pipeline::default(),
+            &mut editor.state,
+            (0, 0),
+        );
+
+        assert_eq!(cell, None);
     }
 }
