@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["flavors/*", "kwark", "kwark-buffer", "kwark-bus", "kwark-core", "kwark-input", "kwark-plugins", "kwark-render", "kwark-text", "kwark-theme", "kwark-tree-sitter", "kwark-ui", "kwark-window"]
+members = ["flavors/*", "kwark", "kwark-buffer", "kwark-bus", "kwark-core", "kwark-input", "kwark-lsp", "kwark-plugins", "kwark-render", "kwark-text", "kwark-theme", "kwark-tree-sitter", "kwark-ui", "kwark-window"]
 
 [workspace.package]
 version = "0.0.0"
