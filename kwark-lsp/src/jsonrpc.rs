@@ -72,6 +72,18 @@ pub struct Request {
     pub id: ID,
 }
 
+impl Request {
+    /// Create a new Request
+    pub fn new(id: ID, method: impl Into<String>, params: Option<serde_json::Value>) -> Self {
+        Self {
+            jsonrpc: Version,
+            method: method.into(),
+            params,
+            id,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Notification {
@@ -80,6 +92,26 @@ pub struct Notification {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<serde_json::Value>,
+}
+
+impl Notification {
+    /// Create a new Notification
+    pub fn new(method: impl Into<String>, params: Option<serde_json::Value>) -> Self {
+        Self {
+            jsonrpc: Version,
+            method: method.into(),
+            params,
+        }
+    }
+}
+
+/// Any message sent over a connection
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(untagged)]
+pub enum Message {
+    Request(Request),
+    Notification(Notification),
+    Response(Response),
 }
 
 /// A Response to a request
@@ -103,6 +135,33 @@ pub enum Response {
     },
 }
 
+impl Response {
+    /// Create a successful Response
+    pub fn success(id: ID, result: serde_json::Value) -> Self {
+        Self::Success {
+            jsonrpc: Version,
+            result,
+            id,
+        }
+    }
+
+    /// Create a failed Response
+    pub fn error(id: ID, error: Error) -> Self {
+        Self::Error {
+            jsonrpc: Version,
+            error,
+            id,
+        }
+    }
+
+    /// The ID of the request this answers
+    pub fn id(&self) -> &ID {
+        match self {
+            Self::Success { id, .. } | Self::Error { id, .. } => id,
+        }
+    }
+}
+
 /// An error from a request
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Error {
@@ -114,6 +173,15 @@ pub struct Error {
 }
 
 impl Error {
+    /// Create a new Error without data
+    pub fn new(code: i64, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            data: None,
+        }
+    }
+
     /// Invalid JSON was received
     pub const PARSE_ERROR: i64 = -32700;
     /// The JSON sent is not a valid request
@@ -263,6 +331,25 @@ mod test {
                 id: ID::Num(1),
             },
             serde_json::from_str::<Response>("{\"jsonrpc\":\"2.0\",\"result\":null,\"id\":1}")
+                .expect("Should be able to deserialize")
+        );
+    }
+
+    #[test]
+    fn test_message_deserialize() {
+        assert_eq!(
+            Message::Request(Request::new(ID::Num(1), "my_method", None)),
+            serde_json::from_str::<Message>(r#"{"jsonrpc":"2.0","method":"my_method","id":1}"#)
+                .expect("Should be able to deserialize")
+        );
+        assert_eq!(
+            Message::Notification(Notification::new("my_method", None)),
+            serde_json::from_str::<Message>(r#"{"jsonrpc":"2.0","method":"my_method"}"#)
+                .expect("Should be able to deserialize")
+        );
+        assert_eq!(
+            Message::Response(Response::success(ID::Num(1), serde_json::Value::Null)),
+            serde_json::from_str::<Message>(r#"{"jsonrpc":"2.0","result":null,"id":1}"#)
                 .expect("Should be able to deserialize")
         );
     }

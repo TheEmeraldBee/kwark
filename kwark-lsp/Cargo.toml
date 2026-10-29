@@ -18,3 +18,4 @@ lsp-types = "0.97.0"
 
 # Errors
 thiserror.workspace = true
+anyhow.workspace = true

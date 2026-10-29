@@ -5,3 +5,6 @@ run:
 
 test:
     cargo test --workspace
+
+open-book:
+    mdbook serve book --open

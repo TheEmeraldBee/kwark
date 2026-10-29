@@ -1,0 +1,9 @@
+[book]
+title = "Kwark"
+authors = ["TheEmeraldBee"]
+language = "en"
+src = "src"
+
+[output.html]
+site-url = "/kwark/book/"
+git-repository-url = "https://github.com/TheEmeraldBee/kwark"
