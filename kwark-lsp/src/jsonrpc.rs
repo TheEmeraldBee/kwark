@@ -47,9 +47,9 @@ impl<'de> Visitor<'de> for VersionVisitor {
         E: serde::de::Error,
     {
         if v == "2.0" {
-            return Ok(Version);
+            Ok(Version)
         } else {
-            return Err(serde::de::Error::custom("invalid version"));
+            Err(serde::de::Error::custom("invalid version"))
         }
     }
 }
