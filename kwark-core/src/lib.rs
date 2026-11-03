@@ -1,5 +1,7 @@
 mod editor;
-mod state;
+mod flags;
+mod plugin;
+mod syntax;
 
 pub mod commands;
 pub mod events;
@@ -11,27 +13,11 @@ pub mod tasks;
 pub mod timers;
 
 pub use editor::*;
-pub use state::*;
+pub use flags::*;
+pub use plugin::*;
 
+pub use anyhow;
 pub use kwark_input::{Chord, Code, Step};
-
-pub type InputState = kwark_input::InputState<State>;
-pub type InputTree = kwark_input::InputTree<State>;
-pub type Pipeline = kwark_render::Pipeline<State>;
-pub type EditorPipeline = kwark_render::EditorPipeline<State, ()>;
-pub type Overlays = kwark_render::Overlays<State>;
 
 /// Flag for the input tree popup
 pub const INPUT_TREE_FLAG: &str = "input_tree_show";
-
-/// An "installable" set of tooling to add to the editor
-pub trait Plugin {
-    fn register(&self, editor: &mut Editor) -> anyhow::Result<()>;
-}
-
-impl Editor {
-    /// Installs a plugin
-    pub fn install(&mut self, plugin: impl Plugin) -> anyhow::Result<()> {
-        plugin.register(self)
-    }
-}

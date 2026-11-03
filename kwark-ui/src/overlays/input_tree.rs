@@ -1,4 +1,4 @@
-use kwark_core::{Flags, INPUT_TREE_FLAG, InputState, State};
+use kwark_core::{Editor, INPUT_TREE_FLAG};
 use kwark_render::Overlay;
 use ratatui::{
     buffer::Buffer,
@@ -11,9 +11,9 @@ use ratatui::{
 /// A popup that lists the keys available at the current input step
 pub struct InputTreePopup;
 
-impl Overlay<State> for InputTreePopup {
-    fn render(&mut self, state: &mut State, area: Rect, buf: &mut Buffer) {
-        let (input, flags) = state.get::<(&InputState, &Flags)>();
+impl<S: 'static> Overlay<Editor<S>> for InputTreePopup {
+    fn render(&mut self, state: &mut Editor<S>, area: Rect, buf: &mut Buffer) {
+        let (input, flags) = (&state.core.input, &state.core.flags);
         if !flags.get(INPUT_TREE_FLAG) {
             return;
         }

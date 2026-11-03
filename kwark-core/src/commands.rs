@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
-use crate::{InputTree, State};
+use crate::{Editor, InputTree};
 
 /// A single parsed argument
 #[derive(Debug, Clone, PartialEq)]
@@ -159,43 +159,34 @@ impl Args {
     }
 }
 
-type CommandFn = Box<dyn Fn(&mut State, &Args) -> anyhow::Result<()>>;
+pub type CommandFn<C> = Rc<dyn Fn(&mut C, &Args) -> anyhow::Result<()>>;
 
 /// The registry of callable commands
-#[derive(Default)]
-pub struct CommandRegistry {
-    commands: HashMap<String, CommandFn>,
+pub struct CommandRegistry<C> {
+    commands: HashMap<String, CommandFn<C>>,
 }
 
-impl CommandRegistry {
+impl<C> Default for CommandRegistry<C> {
+    fn default() -> Self {
+        Self {
+            commands: HashMap::new(),
+        }
+    }
+}
+
+impl<C> CommandRegistry<C> {
     /// Registers a command
     pub fn register(
         &mut self,
         name: impl Into<String>,
-        func: impl Fn(&mut State, &Args) -> anyhow::Result<()> + 'static,
+        func: impl Fn(&mut C, &Args) -> anyhow::Result<()> + 'static,
     ) {
-        self.commands.insert(name.into(), Box::new(func));
+        self.commands.insert(name.into(), Rc::new(func));
     }
 
-    /// Runs a command with the given arguments
-    pub fn call(&self, state: &mut State, name: &str, args: &Args) -> anyhow::Result<()> {
-        match self.commands.get(name) {
-            Some(func) => func(state, args),
-            None => Err(anyhow::anyhow!("unknown command `{name}`")),
-        }
-    }
-
-    /// Parses and runs a command
-    pub fn execute(&self, state: &mut State, line: &str) -> anyhow::Result<()> {
-        let line = line.trim();
-
-        let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
-
-        if name.is_empty() {
-            return Ok(());
-        }
-
-        self.call(state, name, &Args::parse(rest))
+    /// Returns the command registered under `name`
+    pub fn get(&self, name: &str) -> Option<CommandFn<C>> {
+        self.commands.get(name).cloned()
     }
 
     /// Lists the names of every command
@@ -204,7 +195,36 @@ impl CommandRegistry {
     }
 }
 
-pub trait InputTreeExt {
+/// Splits a command line into its name and arguments
+pub fn parse(line: &str) -> (&str, Args) {
+    let line = line.trim();
+    let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+
+    (name, Args::parse(rest))
+}
+
+impl<S: 'static> Editor<S> {
+    /// Runs a command with the given arguments
+    pub fn call(&mut self, name: &str, args: &Args) -> anyhow::Result<()> {
+        match self.core.commands.get(name) {
+            Some(func) => func(self, args),
+            None => Err(anyhow::anyhow!("unknown command `{name}`")),
+        }
+    }
+
+    /// Parses and runs a command line
+    pub fn execute(&mut self, line: &str) -> anyhow::Result<()> {
+        let (name, args) = parse(line);
+
+        if name.is_empty() {
+            return Ok(());
+        }
+
+        self.call(name, &args)
+    }
+}
+
+pub trait InputTreeExt<S: 'static> {
     /// Binds a chord to a named command
     fn bind_cmd(
         &mut self,
@@ -220,11 +240,11 @@ pub trait InputTreeExt {
         &mut self,
         key: &[&str],
         desc: &str,
-        f: impl FnOnce(&mut Group) -> anyhow::Result<()>,
+        f: impl FnOnce(&mut Group<S>) -> anyhow::Result<()>,
     ) -> anyhow::Result<()>;
 }
 
-impl InputTreeExt for InputTree {
+impl<S: 'static> InputTreeExt<S> for InputTree<S> {
     fn bind_cmd(
         &mut self,
         keys: &[&str],
@@ -233,11 +253,9 @@ impl InputTreeExt for InputTree {
     ) -> anyhow::Result<()> {
         let commands = commands.into_iter().map(|x| x.into()).collect::<Vec<_>>();
 
-        self.bind(keys, desc, move |s: &mut State| {
-            let mut taken = s.scope::<(CommandRegistry,)>();
-            let ((registry,), state) = taken.split();
+        self.bind(keys, desc, move |e: &mut Editor<S>| {
             for command in commands.iter() {
-                registry.execute(state, command)?;
+                e.execute(command)?;
             }
 
             Ok(())
@@ -248,7 +266,7 @@ impl InputTreeExt for InputTree {
         &mut self,
         keys: &[&str],
         desc: &str,
-        f: impl FnOnce(&mut Group) -> anyhow::Result<()>,
+        f: impl FnOnce(&mut Group<S>) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         if !desc.is_empty() {
             self.desc(keys, desc)?;
@@ -262,14 +280,14 @@ impl InputTreeExt for InputTree {
 }
 
 /// A builder for a sub-group of [`InputTree`]
-pub struct Group<'a> {
-    tree: &'a mut InputTree,
+pub struct Group<'a, S: 'static> {
+    tree: &'a mut InputTree<S>,
     prefix: Vec<String>,
 }
 
-impl<'a> Group<'a> {
+impl<'a, S: 'static> Group<'a, S> {
     /// The underlying tree
-    pub fn tree(&mut self) -> &mut InputTree {
+    pub fn tree(&mut self) -> &mut InputTree<S> {
         self.tree
     }
 
@@ -287,13 +305,13 @@ impl<'a> Group<'a> {
         &mut self,
         keys: &[&str],
         desc: &str,
-        f: impl Fn(&mut State) -> anyhow::Result<()> + 'static,
+        f: impl Fn(&mut Editor<S>) -> anyhow::Result<()> + 'static,
     ) -> anyhow::Result<()> {
         self.tree.bind(&self.keys(keys), desc, f)
     }
 }
 
-impl<'a> InputTreeExt for Group<'a> {
+impl<'a, S: 'static> InputTreeExt<S> for Group<'a, S> {
     fn bind_cmd(
         &mut self,
         keys: &[&str],
@@ -315,7 +333,7 @@ impl<'a> InputTreeExt for Group<'a> {
         &mut self,
         key: &[&str],
         desc: &str,
-        f: impl FnOnce(&mut Group) -> anyhow::Result<()>,
+        f: impl FnOnce(&mut Group<S>) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         let keys = self.keys(key);
 

@@ -13,12 +13,13 @@ use crate::error::QueryLoadError;
 pub use tree_sitter::Language;
 
 /// A global registry for tree-sitter language definitions
+#[derive(Default)]
 pub struct LanguageStore {
     map: HashMap<String, StoredLanguage>,
 
     queries: HashMap<(String, String), Arc<Query>>,
 
-    query_path: PathBuf,
+    query_path: Option<PathBuf>,
 }
 
 struct StoredLanguage {
@@ -41,7 +42,7 @@ impl LanguageStore {
         Ok(Self {
             map: HashMap::new(),
             queries: HashMap::new(),
-            query_path,
+            query_path: Some(query_path),
         })
     }
 
@@ -64,7 +65,11 @@ impl LanguageStore {
             return Err(QueryLoadError::NoLanguage(lang.to_string()));
         };
 
-        let query_path = self.query_path.join(lang).join(format!("{}.scm", query));
+        let Some(root) = &self.query_path else {
+            return Err(QueryLoadError::NoQueryFolder);
+        };
+
+        let query_path = root.join(lang).join(format!("{}.scm", query));
 
         if !query_path.exists() {
             return Err(QueryLoadError::MissingPath(query_path));
@@ -82,9 +87,8 @@ impl LanguageStore {
     /// Returns whether `lang` has a `{query}.scm` file on disk, without compiling it
     pub fn has_query(&self, lang: &str, query: &str) -> bool {
         self.query_path
-            .join(lang)
-            .join(format!("{}.scm", query))
-            .exists()
+            .as_ref()
+            .is_some_and(|root| root.join(lang).join(format!("{}.scm", query)).exists())
     }
 
     /// Returns the names of every language currently registered

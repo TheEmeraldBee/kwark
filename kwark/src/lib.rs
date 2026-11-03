@@ -1,5 +1,4 @@
 mod run;
-mod syntax;
 mod terminal;
 
 pub mod prelude;
@@ -9,4 +8,4 @@ pub use kwark_plugins as plugins;
 pub use kwark_ui as ui;
 pub use kwark_window as window;
 
-pub use run::{init, run};
+pub use run::run;

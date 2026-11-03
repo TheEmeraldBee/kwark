@@ -1,21 +1,20 @@
 use kwark_render::Border;
-use kwark_theme::Theme;
 use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
-use kwark_core::State;
+use kwark_core::Editor;
 use kwark_window::WindowCtx;
 
 pub struct Simple(pub BorderType);
 
-impl Border<State, WindowCtx> for Simple {
+impl<S: 'static> Border<Editor<S>, WindowCtx> for Simple {
     fn render(
         &mut self,
-        state: &mut State,
+        state: &mut Editor<S>,
         ctx: &WindowCtx,
         area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) -> ratatui::prelude::Rect {
-        let theme = state.get::<&Theme>();
+        let theme = &state.core.theme;
         let style = match ctx.active {
             true => theme.get("borders.active"),
             false => theme.get("borders"),

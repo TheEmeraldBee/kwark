@@ -1,13 +1,11 @@
-use kwark::{State, prelude::Theme};
+use kwark::prelude::Theme;
 use ratatui::style::{Color, Style};
 
 fn f(c: Color) -> Style {
     Style::new().fg(c)
 }
 
-pub fn init_theme(state: &mut State) {
-    let theme = state.get::<&mut Theme>();
-
+pub fn init_theme(theme: &mut Theme) {
     const ROSEWATER: Color = Color::from_u32(0x00F5E0DC);
     const PINK: Color = Color::from_u32(0x00F5C2E7);
     const MAUVE: Color = Color::from_u32(0x00CBA6F7);

@@ -2,13 +2,12 @@ use std::time::{Duration, Instant};
 
 use chrono::{Local, Timelike};
 use kwark_render::Element;
-use kwark_theme::Theme;
 use ratatui::{
     buffer::CellWidth,
     widgets::{Paragraph, Widget},
 };
 
-use kwark_core::{State, frame::Redraw};
+use kwark_core::Editor;
 
 /// Format specifiers that change every second
 const SECOND_SPECIFIERS: [&str; 6] = ["%S", "%T", "%X", "%r", "%s", "%+"];
@@ -45,8 +44,8 @@ impl Clock {
     }
 }
 
-impl<C> Element<State, C> for Clock {
-    fn width(&mut self, _state: &mut State, _ctx: &C, _available: u16) -> u16 {
+impl<S: 'static, C> Element<Editor<S>, C> for Clock {
+    fn width(&mut self, _state: &mut Editor<S>, _ctx: &C, _available: u16) -> u16 {
         let render = Local::now().format(&self.format).to_string();
 
         let width = render.cell_width();
@@ -56,22 +55,23 @@ impl<C> Element<State, C> for Clock {
         width
     }
 
-    fn height(&mut self, _state: &mut State, _ctx: &C) -> u16 {
+    fn height(&mut self, _state: &mut Editor<S>, _ctx: &C) -> u16 {
         1
     }
 
     fn render(
         &mut self,
-        state: &mut State,
+        state: &mut Editor<S>,
         _ctx: &C,
         area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) {
         state
-            .get::<&mut Redraw>()
+            .core
+            .redraw
             .request_at(Instant::now() + self.until_next_tick());
 
-        let style = state.get::<&Theme>().get("bar.clock");
+        let style = state.core.theme.get("bar.clock");
         Paragraph::new(self.next_text.as_str())
             .style(style)
             .render(area, buf);

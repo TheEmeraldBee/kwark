@@ -1,10 +1,9 @@
 use std::time::{Duration, Instant};
 
 use kwark_render::Element;
-use kwark_theme::Theme;
 use ratatui::widgets::{Paragraph, Widget};
 
-use kwark_core::{State, frame::Redraw, tasks::Tasks};
+use kwark_core::Editor;
 
 const GLYPHS: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const STEP: Duration = Duration::from_millis(80);
@@ -28,9 +27,9 @@ impl Default for Spinner {
     }
 }
 
-impl<C> Element<State, C> for Spinner {
-    fn width(&mut self, state: &mut State, _ctx: &C, _available: u16) -> u16 {
-        match state.get::<&Tasks>().busy() {
+impl<S: 'static, C> Element<Editor<S>, C> for Spinner {
+    fn width(&mut self, state: &mut Editor<S>, _ctx: &C, _available: u16) -> u16 {
+        match state.core.tasks.busy() {
             true => 1,
             false => 1,
         }
@@ -38,15 +37,15 @@ impl<C> Element<State, C> for Spinner {
 
     fn render(
         &mut self,
-        state: &mut State,
+        state: &mut Editor<S>,
         _ctx: &C,
         area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) {
         let step = (self.start.elapsed().as_millis() / STEP.as_millis()) as u32;
 
-        if !state.get::<&Tasks>().busy() {
-            let style = state.get::<&Theme>().get("bar.spinner");
+        if !state.core.tasks.busy() {
+            let style = state.core.theme.get("bar.spinner");
             Paragraph::new(format!("{} ", GLYPHS[step as usize % GLYPHS.len()]))
                 .style(style)
                 .render(area, buf);
@@ -55,9 +54,9 @@ impl<C> Element<State, C> for Spinner {
 
         let next = self.start + STEP * (step + 1);
 
-        state.get::<&mut Redraw>().request_at(next);
+        state.core.redraw.request_at(next);
 
-        let style = state.get::<&Theme>().get("bar.spinner");
+        let style = state.core.theme.get("bar.spinner");
         Paragraph::new(format!("{} ", GLYPHS[step as usize % GLYPHS.len()]))
             .style(style)
             .render(area, buf);

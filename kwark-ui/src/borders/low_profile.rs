@@ -1,24 +1,23 @@
 use kwark_render::Border;
-use kwark_theme::Theme;
 use ratatui::{
     symbols::merge::MergeStrategy,
     widgets::{Block, BorderType, Borders, Widget},
 };
 
-use kwark_core::State;
+use kwark_core::Editor;
 use kwark_window::WindowCtx;
 
 pub struct LowProfile(pub BorderType);
 
-impl Border<State, WindowCtx> for LowProfile {
+impl<S: 'static> Border<Editor<S>, WindowCtx> for LowProfile {
     fn render(
         &mut self,
-        state: &mut State,
+        state: &mut Editor<S>,
         ctx: &WindowCtx,
         mut area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) -> ratatui::prelude::Rect {
-        let theme = state.get::<&Theme>();
+        let theme = &state.core.theme;
         let style = match ctx.active {
             true => theme.get("borders.active"),
             false => theme.get("borders"),

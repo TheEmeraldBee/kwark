@@ -7,8 +7,9 @@ license.workspace = true
 [dependencies]
 kwark-bus.workspace = true
 kwark-buffer.workspace = true
-kwark-core.workspace = true
 kwark-render.workspace = true
-kwark-resources.workspace = true
 
 ratatui.workspace = true
+
+[dev-dependencies]
+kwark-text.workspace = true

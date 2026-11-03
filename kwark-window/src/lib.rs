@@ -4,15 +4,13 @@ pub use layout::*;
 use std::ops::{Deref, DerefMut};
 
 use kwark_buffer as buffer;
-use kwark_core::{Pipeline, State};
-use kwark_render::{Boundaries, Viewport, split_vertically};
-use kwark_resources::Resources;
+use kwark_render::{Boundaries, Pipeline, Viewport, split_vertically};
 
 use ratatui::layout::Rect;
 use ratatui::prelude::*;
 use ratatui::widgets::{Clear, Widget};
 
-pub type WindowPipeline = kwark_render::WindowPipeline<State, WindowCtx>;
+pub type WindowPipeline<S> = kwark_render::WindowPipeline<S, WindowCtx>;
 
 /// An event when the focused window changes
 #[derive(Debug, Clone, Copy)]
@@ -37,9 +35,13 @@ impl Scroll {
     }
 }
 
-/// The viewport of a buffer's last render in a window
-#[derive(Debug, Clone, Copy)]
-pub struct LastViewport(pub Viewport);
+/// The view of one buffer in one window
+#[derive(Default, Debug, Clone, Copy)]
+pub struct BufferView {
+    pub scroll: Scroll,
+    /// The viewport of the buffer's last render in the window
+    pub viewport: Option<Viewport>,
+}
 
 /// A buffer's info that's open in the window
 pub struct Tab {
@@ -57,14 +59,14 @@ pub struct WindowCtx {
 /// A single pane in the editor
 #[derive(Default)]
 pub struct Window {
-    bufs: buffer::List<Resources>,
+    bufs: buffer::List<BufferView>,
 
     rect: Option<Rect>,
     content_rect: Option<Rect>,
 }
 
 impl Deref for Window {
-    type Target = buffer::List<Resources>;
+    type Target = buffer::List<BufferView>;
 
     fn deref(&self) -> &Self::Target {
         &self.bufs
@@ -96,46 +98,42 @@ impl Window {
         self.content_rect
     }
 
-    /// Returns the resources of the selected buffer in this window
-    pub fn resources(&self) -> Option<&Resources> {
+    /// Returns the view of the selected buffer in this window
+    pub fn view(&self) -> Option<&BufferView> {
         self.bufs.state()
     }
 
-    /// Returns the resources of the selected buffer in this window, mutably
-    pub fn resources_mut(&mut self) -> Option<&mut Resources> {
+    /// Returns the view of the selected buffer in this window, mutably
+    pub fn view_mut(&mut self) -> Option<&mut BufferView> {
         self.bufs.state_mut()
     }
 
     /// Scrolls the selected buffer by `delta` lines, clamped to `0..total_lines`
     pub fn scroll_by(&mut self, delta: isize, total_lines: usize) {
-        let Some(res) = self.bufs.state_mut() else {
+        let Some(view) = self.bufs.state_mut() else {
             return;
         };
 
-        let scroll = res.get_or_default::<&mut Scroll>();
         let max = total_lines.saturating_sub(1);
-        scroll.top = (scroll.top as isize + delta).clamp(0, max as isize) as usize;
+        view.scroll.top = (view.scroll.top as isize + delta).clamp(0, max as isize) as usize;
     }
 
     /// Returns the line drawn at the top of the selected buffer
     pub fn scroll_shown(&self) -> usize {
-        self.resources()
-            .and_then(|r| r.get_ref::<&Scroll>().ok())
-            .map_or(0, Scroll::shown)
+        self.view().map_or(0, |v| v.scroll.shown())
     }
 
     /// The last rendered viewport for the selected buffer, if it has been drawn
     pub fn viewport(&self) -> Option<Viewport> {
-        let res = self.resources()?;
-        res.get_ref::<&LastViewport>().ok().map(|v| v.0)
+        self.view()?.viewport
     }
 
     /// Screen cell for a line and column of the selected buffer, None when it is off screen
-    pub fn cell_of(
+    pub fn cell_of<S>(
         &self,
         storage: &buffer::Storage,
-        pipeline: &mut Pipeline,
-        state: &mut State,
+        pipeline: &mut Pipeline<S>,
+        state: &mut S,
         pos: (usize, usize),
     ) -> Option<Position> {
         let rect = self.content_rect?;
@@ -146,15 +144,15 @@ impl Window {
 
     /// Renders the window's content
     #[allow(clippy::too_many_arguments)]
-    pub fn render(
+    pub fn render<S>(
         &mut self,
         storage: &buffer::Storage,
         frame: &mut Frame<'_>,
         rect: Rect,
 
-        pipeline: &mut Pipeline,
-        window_pipeline: &mut WindowPipeline,
-        state: &mut State,
+        pipeline: &mut Pipeline<S>,
+        window_pipeline: &mut WindowPipeline<S>,
+        state: &mut S,
 
         is_active: bool,
         boundaries: Boundaries,
@@ -215,16 +213,8 @@ impl Window {
 
         let viewport = buf.render(pipeline, state, frame, text_rect, self.scroll_shown());
 
-        if let Some(res) = self.bufs.state_mut() {
-            res.insert(LastViewport(viewport));
+        if let Some(view) = self.bufs.state_mut() {
+            view.viewport = Some(viewport);
         }
     }
-}
-
-/// Screen cell for a line and column in a window's selected buffer, None when it is off screen
-pub fn cell_of(state: &mut State, leaf: LeafId, pos: (usize, usize)) -> Option<Position> {
-    let mut taken = state.scope::<(buffer::Storage, Pipeline, WindowLayout)>();
-    let ((storage, pipeline, windows), state) = taken.split();
-
-    windows.cell_of(leaf, storage, pipeline, state, pos)
 }

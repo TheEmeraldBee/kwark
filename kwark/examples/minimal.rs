@@ -1,27 +1,22 @@
-use kwark::prelude::*;
+// The state of this editor, with no plugins
+kwark::state! {
+    pub struct MinimalState {}
+}
 
 fn main() -> anyhow::Result<()> {
-  // Initialize the editor so you can configure it.
-  let mut editor = kwark::init();
+    // Build the editor and register every plugin in the state
+    let mut editor = MinimalState::editor()?;
 
-  let input = editor.get::<&mut InputState>();
+    // The "normal" mode is the mode the editor starts in
+    let normal = editor.core.input.tree("normal");
 
-  {
-    // Create a "normal" mode for your editor.
-    // This is the default mode you end up in
-    let normal = input.tree("normal");
-
-    // Create a binding with the "chord" ctrl-c
-    // Set the bind's description to "Quit", and make it so it runs a function that sets the editor's running state to false
-    normal.bind(&["ctrl-c"], "Quit", |s| {
-      s.get::<&mut Running>().quit();
-      Ok(())
+    normal.bind(&["ctrl-c"], "Quit", |e| {
+        e.core.running.quit();
+        Ok(())
     })?;
-  }
 
-  // Now that kwark is configured, allow the editor to take control and run
-  // Whenever Running ends up being false at the end of a frame, this run command will exit, so we can do any cleanup we want afterwards
-  kwark::run(editor);
+    // Run until a binding quits the editor
+    kwark::run(editor);
 
-  Ok(())
+    Ok(())
 }

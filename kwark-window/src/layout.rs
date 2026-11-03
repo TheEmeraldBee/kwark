@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use kwark_buffer as buffer;
 use kwark_bus::EventSender;
-use kwark_core::{Pipeline, State};
-use kwark_render::Boundaries;
+use kwark_render::{Boundaries, Pipeline};
 
 use ratatui::layout::{self, Position, Rect};
 use ratatui::prelude::*;
@@ -278,6 +277,13 @@ impl WindowLayout {
         self.leaves.values_mut().map(|entry| &mut entry.window)
     }
 
+    /// Returns every window in the layout with its id
+    pub fn leaves_mut(&mut self) -> impl Iterator<Item = (LeafId, &mut Window)> {
+        self.leaves
+            .iter_mut()
+            .map(|(id, entry)| (*id, &mut entry.window))
+    }
+
     /// Updates every window in the layout based on the buffers in storage
     pub fn update_all(&mut self, bufs: &buffer::Storage) {
         for entry in self.leaves.values_mut() {
@@ -286,15 +292,15 @@ impl WindowLayout {
     }
 
     /// Renders the layout to the frame in the given rect
-    pub fn render(
+    pub fn render<S>(
         &mut self,
         storage: &buffer::Storage,
         frame: &mut Frame<'_>,
         rect: Rect,
 
-        pipeline: &mut Pipeline,
-        window_pipeline: &mut WindowPipeline,
-        state: &mut State,
+        pipeline: &mut Pipeline<S>,
+        window_pipeline: &mut WindowPipeline<S>,
+        state: &mut S,
     ) {
         self.render_child(
             self.root,
@@ -309,16 +315,16 @@ impl WindowLayout {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn render_child(
+    fn render_child<S>(
         &mut self,
         child: Child,
         storage: &buffer::Storage,
         frame: &mut Frame<'_>,
         rect: Rect,
 
-        pipeline: &mut Pipeline,
-        window_pipeline: &mut WindowPipeline,
-        state: &mut State,
+        pipeline: &mut Pipeline<S>,
+        window_pipeline: &mut WindowPipeline<S>,
+        state: &mut S,
 
         boundaries: Boundaries,
     ) {
@@ -398,11 +404,11 @@ impl WindowLayout {
     }
 
     /// Finds the window, buffer, and text position under a screen point
-    pub fn hit_test(
+    pub fn hit_test<S>(
         &self,
         storage: &buffer::Storage,
-        pipeline: &mut Pipeline,
-        state: &mut State,
+        pipeline: &mut Pipeline<S>,
+        state: &mut S,
         point: Position,
     ) -> Option<(LeafId, buffer::ID, buffer::HitPosition)> {
         let (leaf, _) = self.locate(point)?;
@@ -418,12 +424,12 @@ impl WindowLayout {
     }
 
     /// Screen cell for a line and column in a window's selected buffer
-    pub fn cell_of(
+    pub fn cell_of<S>(
         &self,
         leaf: LeafId,
         storage: &buffer::Storage,
-        pipeline: &mut Pipeline,
-        state: &mut State,
+        pipeline: &mut Pipeline<S>,
+        state: &mut S,
         pos: (usize, usize),
     ) -> Option<Position> {
         self.leaves
@@ -481,12 +487,11 @@ mod test {
 
     #[test]
     pub fn undrawn_window_has_no_cell() {
-        let mut editor = kwark_core::Editor::default();
         let (bus, _rx) = kwark_bus::channel();
         let mut storage = buffer::Storage::new(bus.clone());
         let mut layout = WindowLayout::new(bus);
 
-        let id = storage.insert(kwark_core::prelude::text::BufferEntry::new_scratch("a"));
+        let id = storage.insert(kwark_text::BufferEntry::new_scratch("a"));
         layout.active_mut().select(id);
         layout.update_all(&storage);
 
@@ -494,8 +499,8 @@ mod test {
         let cell = layout.cell_of(
             leaf,
             &storage,
-            &mut Pipeline::default(),
-            &mut editor.state,
+            &mut Pipeline::<()>::default(),
+            &mut (),
             (0, 0),
         );
 
@@ -508,7 +513,7 @@ mod test {
         let mut storage = buffer::Storage::new(bus.clone());
         let mut layout = WindowLayout::new(bus);
 
-        let id = storage.insert(kwark_core::prelude::text::BufferEntry::new_scratch("a"));
+        let id = storage.insert(kwark_text::BufferEntry::new_scratch("a"));
         let first = layout.active_id();
         layout.active_mut().select(id.clone());
 
@@ -528,11 +533,7 @@ mod test {
         window.select(buffer::ID::Widget(0));
 
         window.scroll_by(3, 10);
-        window
-            .resources_mut()
-            .unwrap()
-            .get_or_default::<&mut crate::Scroll>()
-            .shown = Some(1);
+        window.view_mut().unwrap().scroll.shown = Some(1);
 
         assert_eq!(window.scroll_shown(), 1);
     }

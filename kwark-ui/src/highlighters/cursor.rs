@@ -1,4 +1,4 @@
-use kwark_core::prelude::{text::CursorOptions, *};
+use kwark_core::prelude::*;
 use ratatui::style::{Color, Modifier, Style};
 use render::*;
 
@@ -8,9 +8,9 @@ pub struct CursorTag;
 /// Highlights the character under every cursor in the buffer
 pub struct Cursor;
 
-impl Highlighter<State> for Cursor {
-    fn highlight(&mut self, state: &mut State, ctx: &LineCtx) -> Option<Highlight> {
-        let is_all = state.get::<&CursorOptions>().is_all();
+impl<S: 'static> Highlighter<Editor<S>> for Cursor {
+    fn highlight(&mut self, state: &mut Editor<S>, ctx: &LineCtx) -> Option<Highlight> {
+        let is_all = state.core.cursor.is_all();
 
         let line_start = ctx.rope.line_to_char(ctx.line);
         let len = ctx.text.len_chars();

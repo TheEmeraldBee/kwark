@@ -4,7 +4,7 @@ pub use status_line::*;
 use crossterm::event::{KeyCode, KeyModifiers};
 use kwark_input::Code;
 
-use kwark_core::{InputState, State, commands::CommandRegistry};
+use kwark_core::{Editor, Has, PluginState, Senders};
 
 /// The state that handles how a command is inputted
 #[derive(Default)]
@@ -135,75 +135,79 @@ impl CommandLineState {
 ///
 /// When switching into `command` mode, make sure to run [`CommandLineState::set_return_mode`] in order to set the return mode.
 /// Or run `command_mode` directly to auto-return to the current mode
+#[derive(Default)]
 pub struct Plugin;
 
-pub fn command_mode(state: &mut State) {
-    let (input, command_line) = state.get::<(&mut InputState, &mut CommandLineState)>();
-    let cur_mode = input.mode();
-    command_line.set_return_mode(cur_mode);
+/// Switches to `command` mode, returning to the current mode after a submit
+pub fn command_mode<S: Has<Plugin> + 'static>(e: &mut Editor<S>) {
+    let (core, command_line) = e.split::<Plugin>();
+    command_line.set_return_mode(core.input.mode());
 
-    input.set_mode("command");
+    core.input.set_mode("command");
 }
 
-impl kwark_core::Plugin for Plugin {
-    fn register(&self, editor: &mut kwark_core::prelude::Editor) -> anyhow::Result<()> {
-        editor.insert(CommandLineState::default());
+impl PluginState for Plugin {
+    type State = CommandLineState;
 
-        let input = editor.get::<&mut InputState>();
-        let command = input.tree("command");
+    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<CommandLineState> {
+        Ok(CommandLineState::default())
+    }
+}
 
-        command.bind(&["escape"], "Exit command mode", |s| {
-            let (input, command) = s.get::<(&mut InputState, &CommandLineState)>();
-            input.set_mode(command.return_mode());
+impl<S: Has<Plugin> + 'static> kwark_core::Plugin<S> for Plugin {
+    fn register(&self, editor: &mut Editor<S>) -> anyhow::Result<()> {
+        let command = editor.core.input.tree("command");
+
+        command.bind(&["escape"], "Exit command mode", |e| {
+            let (core, command) = e.split::<Plugin>();
+            core.input.set_mode(command.return_mode());
 
             Ok(())
         })?;
 
-        command.bind(&["space"], "Insert Space", |s| {
-            s.get::<&mut CommandLineState>().insert(" ");
+        command.bind(&["space"], "Insert Space", |e| {
+            e.plugin_mut::<Plugin>().insert(" ");
             Ok(())
         })?;
 
-        command.bind(&["backspace"], "Delete text", |s| {
-            s.get::<&mut CommandLineState>().delete(1);
+        command.bind(&["backspace"], "Delete text", |e| {
+            e.plugin_mut::<Plugin>().delete(1);
             Ok(())
         })?;
 
-        command.bind(&["left"], "Move cursor left", |s| {
-            s.get::<&mut CommandLineState>().move_cursor(-1);
+        command.bind(&["left"], "Move cursor left", |e| {
+            e.plugin_mut::<Plugin>().move_cursor(-1);
             Ok(())
         })?;
 
-        command.bind(&["right"], "Move cursor right", |s| {
-            s.get::<&mut CommandLineState>().move_cursor(1);
+        command.bind(&["right"], "Move cursor right", |e| {
+            e.plugin_mut::<Plugin>().move_cursor(1);
             Ok(())
         })?;
 
-        command.bind(&["up"], "History Older", |s| {
-            s.get::<&mut CommandLineState>().change_history(-1);
+        command.bind(&["up"], "History Older", |e| {
+            e.plugin_mut::<Plugin>().change_history(-1);
             Ok(())
         })?;
 
-        command.bind(&["down"], "History Newer", |s| {
-            s.get::<&mut CommandLineState>().change_history(1);
+        command.bind(&["down"], "History Newer", |e| {
+            e.plugin_mut::<Plugin>().change_history(1);
             Ok(())
         })?;
 
-        command.bind(&["enter"], "Submit", |s| {
-            let (command_line, input) = s.get::<(&mut CommandLineState, &mut InputState)>();
+        command.bind(&["enter"], "Submit", |e| {
+            let (core, command_line) = e.split::<Plugin>();
 
             let command = command_line.submit();
 
-            input.set_mode(command_line.return_mode());
+            core.input.set_mode(command_line.return_mode());
 
-            let mut scoped = s.scope::<(CommandRegistry,)>();
-            let ((registry,), s) = scoped.split();
-            registry.execute(s, &command)
+            e.execute(&command)
         })?;
 
         command.set_backup(
-            |s, chord| {
-                let command_line = s.get::<&mut CommandLineState>();
+            |e, chord| {
+                let command_line = e.plugin_mut::<Plugin>();
 
                 // Don't handle anything other than shift
                 if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {

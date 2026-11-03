@@ -1,25 +1,30 @@
-use crate::State;
+use crate::Editor;
 
-pub type SuspendFn = Box<dyn FnOnce(&mut State) -> anyhow::Result<()>>;
+pub type SuspendFn<C> = Box<dyn FnOnce(&mut C) -> anyhow::Result<()>>;
 
 /// Work queued for when another program owns the terminal
-#[derive(Default)]
-pub struct SuspendQueue(Vec<SuspendFn>);
+pub struct SuspendQueue<C>(Vec<SuspendFn<C>>);
 
-impl SuspendQueue {
+impl<C> Default for SuspendQueue<C> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<C> SuspendQueue<C> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Removes and returns every queued suspend
-    pub fn take(&mut self) -> Vec<SuspendFn> {
+    pub fn take(&mut self) -> Vec<SuspendFn<C>> {
         std::mem::take(&mut self.0)
     }
 }
 
-impl State {
+impl<S: 'static> Editor<S> {
     /// Runs `f` while the shell owns the terminal
-    pub fn suspend(&mut self, f: impl FnOnce(&mut State) -> anyhow::Result<()> + 'static) {
-        self.get::<&mut SuspendQueue>().0.push(Box::new(f));
+    pub fn suspend(&mut self, f: impl FnOnce(&mut Editor<S>) -> anyhow::Result<()> + 'static) {
+        self.core.suspend.0.push(Box::new(f));
     }
 }

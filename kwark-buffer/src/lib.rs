@@ -7,7 +7,6 @@ use std::{
 
 use kwark_bus::EventSender;
 use kwark_render::{CellArgs, HitArgs, Pipeline, RenderArgs, Viewport};
-use kwark_resources::Resources;
 use kwark_text::{self as text, BoundCursorSet, BufferKind};
 use kwark_tree_sitter::prelude::*;
 
@@ -397,7 +396,6 @@ pub struct Storage {
 
     /// The text version last reported for each buffer
     reported: HashMap<ID, u128>,
-    resources: HashMap<ID, Resources>,
     bus: EventSender,
 }
 
@@ -408,14 +406,12 @@ impl Storage {
             next_id: 0,
             inner: HashMap::new(),
             reported: HashMap::new(),
-            resources: HashMap::new(),
             bus,
         }
     }
 
     fn put(&mut self, id: ID, buf: Buffer) {
         self.reported.insert(id.clone(), buf.version());
-        self.resources.insert(id.clone(), Resources::new());
 
         if self.inner.insert(id.clone(), buf).is_some() {
             self.bus.emit(BufferClosed { id: id.clone() });
@@ -494,7 +490,6 @@ impl Storage {
         let buf = self.inner.remove(id)?;
 
         self.reported.remove(id);
-        self.resources.remove(id);
         self.bus.emit(BufferClosed { id: id.clone() });
 
         Some(buf)
@@ -512,16 +507,6 @@ impl Storage {
                 });
             }
         }
-    }
-
-    /// Returns the resources of a buffer
-    pub fn resources(&self, id: &ID) -> Option<&Resources> {
-        self.resources.get(id)
-    }
-
-    /// Returns the resources of a buffer, mutably
-    pub fn resources_mut(&mut self, id: &ID) -> Option<&mut Resources> {
-        self.resources.get_mut(id)
     }
 
     /// Checks if the ID exists within the storage
@@ -739,25 +724,6 @@ mod test {
 
         storage.remove(&id);
         assert_eq!(events(&mut rx), ["closed"]);
-    }
-
-    #[test]
-    pub fn resources_follow_the_buffer() {
-        let (bus, _rx) = kwark_bus::channel();
-        let mut storage = Storage::new(bus);
-
-        let id = storage.insert(text::BufferEntry::new_scratch("a"));
-        *storage
-            .resources_mut(&id)
-            .unwrap()
-            .get_or_default::<&mut u32>() = 7;
-        assert_eq!(storage.resources(&id).unwrap().get_ref::<&u32>(), Ok(&7));
-
-        storage.insert(text::BufferEntry::new_scratch("a"));
-        assert!(!storage.resources(&id).unwrap().contains::<u32>());
-
-        storage.remove(&id);
-        assert!(storage.resources(&id).is_none());
     }
 
     #[test]

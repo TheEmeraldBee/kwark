@@ -3,12 +3,11 @@ use std::{
     process::{Command, Stdio},
 };
 
-pub use kwark::prelude::*;
+use kwark::prelude::*;
 use kwark::{
     plugins::{self, cursor_overrides::CursorOverrides},
     prelude::{
-        buffer::Storage,
-        text::{BoundCursorSet, BufferEntry, CursorOptions},
+        text::{BoundCursorSet, BufferEntry},
         tree_sitter::LanguageStore,
     },
 };
@@ -16,13 +15,28 @@ use ratatui::{layout::Position, widgets::BorderType};
 
 mod theme;
 
-fn active_buffer(s: &mut State) -> Option<BoundCursorSet<'_>> {
-    let id = s.get::<&WindowLayout>().active().selected()?;
-    s.get::<&mut buffer::Storage>().get_mut(&id)?.as_text()
+kwark::state! {
+    /// The state of the default flavor
+    pub struct DefaultState {
+        visual: plugins::visual::Plugin,
+        editor_commands: plugins::editor_commands::Plugin,
+        movement: plugins::movement::Plugin,
+        insert: plugins::insert::Plugin,
+        window: plugins::window::Plugin,
+        command_line: plugins::command_line::Plugin,
+        smooth_scroll: plugins::smooth_scroll::Plugin = plugins::smooth_scroll::Plugin::new(40.0),
+    }
 }
 
-fn commit_changes(state: &mut State) {
-    let Some(mut buf) = active_buffer(state) else {
+type Editor = kwark::Editor<DefaultState>;
+
+fn active_buffer(e: &mut Editor) -> Option<BoundCursorSet<'_>> {
+    let id = e.core.windows.active().selected()?;
+    e.core.buffers.get_mut(&id)?.as_text()
+}
+
+fn commit_changes(e: &mut Editor) {
+    let Some(mut buf) = active_buffer(e) else {
         return;
     };
 
@@ -30,14 +44,12 @@ fn commit_changes(state: &mut State) {
 }
 
 /// Opens a file in the active window
-fn open_file(s: &mut State, path: PathBuf) {
-    s.spawn_blocking(
+fn open_file(e: &mut Editor, path: PathBuf) {
+    e.spawn_blocking(
         move || BufferEntry::new_file(path),
-        |s, buf| {
-            let (layout, storage) = s.get::<(&mut WindowLayout, &mut Storage)>();
-
-            let id = storage.insert(buf?);
-            layout.active_mut().select(id);
+        |e, buf| {
+            let id = e.core.buffers.insert(buf?);
+            e.core.windows.active_mut().select(id);
 
             Ok(())
         },
@@ -51,67 +63,66 @@ fn buffer_len_lines(storage: &buffer::Storage, id: &buffer::ID) -> usize {
     }
 }
 
-fn scroll_window(s: &mut State, leaf: LeafId, delta: isize) {
-    let (layout, storage) = s.get::<(&mut WindowLayout, &buffer::Storage)>();
+fn scroll_window(e: &mut Editor, leaf: LeafId, delta: isize) {
+    let Core {
+        windows, buffers, ..
+    } = &mut e.core;
 
-    let Some(id) = layout.window_mut(leaf).and_then(|w| w.selected()) else {
+    let Some(window) = windows.window_mut(leaf) else {
+        return;
+    };
+    let Some(id) = window.selected() else {
         return;
     };
 
-    let total_lines = buffer_len_lines(storage, &id);
-
-    if let Some(window) = layout.window_mut(leaf) {
-        window.scroll_by(delta, total_lines);
-    }
+    window.scroll_by(delta, buffer_len_lines(buffers, &id));
 }
 
-fn create_scroll(delta: isize) -> impl Fn(&mut State) -> anyhow::Result<()> {
-    move |s: &mut State| {
-        let pos = *s.get::<&MousePosition>();
+fn create_scroll(delta: isize) -> impl Fn(&mut Editor) -> anyhow::Result<()> {
+    move |e: &mut Editor| {
+        let pos = e.core.mouse;
         let point = Position::new(pos.column, pos.row);
 
-        let Some((leaf, _)) = s.get::<&WindowLayout>().locate(point) else {
+        let Some((leaf, _)) = e.core.windows.locate(point) else {
             return Ok(());
         };
 
-        scroll_window(s, leaf, delta);
+        scroll_window(e, leaf, delta);
 
         Ok(())
     }
 }
 
 fn main() -> anyhow::Result<()> {
-    let mut editor = kwark::init();
+    let mut editor = DefaultState::editor()?;
 
-    // Insert a language store with the path to the queries directory
-    editor.insert(LanguageStore::new(
-        format!("{}/queries", env!("CARGO_MANIFEST_DIR")).into(),
-    )?);
+    // Language store with the path to the queries directory
+    editor.core.languages =
+        LanguageStore::new(format!("{}/queries", env!("CARGO_MANIFEST_DIR")).into())?;
 
-    plugins::visual::init(&mut editor);
+    editor
+        .core
+        .languages
+        .register(
+            "rust",
+            tree_sitter::Language::new(tree_sitter_rust::LANGUAGE),
+        )?
+        .with_extensions(["rs"]);
 
-    // Each plugin seeds the state its own commands need
-    editor.install(plugins::editor_commands::Plugin)?;
-    editor.install(plugins::movement::Plugin)?;
-    editor.install(plugins::insert::Plugin)?;
-    editor.install(plugins::window::Plugin)?;
-    editor.install(plugins::command_line::Plugin)?;
-    editor.install(plugins::smooth_scroll::Plugin::new(40.0))?;
-
-    let input = editor.get::<&mut InputState>();
+    let input = &mut editor.core.input;
 
     {
         let normal = input.tree("normal");
 
-        normal.bind(&["ctrl-d"], "Scroll Down", |s| {
-            let leaf = s.get::<&WindowLayout>().active_id();
-            scroll_window(s, leaf, 40);
+        normal.bind(&["ctrl-d"], "Scroll Down", |e| {
+            let leaf = e.core.windows.active_id();
+            scroll_window(e, leaf, 40);
             Ok(())
         })?;
 
-        normal.bind(&["ctrl-u"], "Scroll Up", |s| {
-            let leaf = s.get::<&WindowLayout>().active_id();
-            scroll_window(s, leaf, -40);
+        normal.bind(&["ctrl-u"], "Scroll Up", |e| {
+            let leaf = e.core.windows.active_id();
+            scroll_window(e, leaf, -40);
             Ok(())
         })?;
 
@@ -121,8 +132,8 @@ fn main() -> anyhow::Result<()> {
 
         normal.group(&["space"], "General Actions", |g| {
             g.group(&["f"], "File Pickers", |g| {
-                g.bind(&["f"], "Open FZF file picker", |s| {
-                    s.suspend(|s| {
+                g.bind(&["f"], "Open FZF file picker", |e| {
+                    e.suspend(|e| {
                         let out = String::from_utf8_lossy(
                             &Command::new("sh")
                                 .args(["-c", "find \"$PWD\" -type f | fzf"])
@@ -137,7 +148,7 @@ fn main() -> anyhow::Result<()> {
                             return Ok(());
                         }
 
-                        open_file(s, out.trim().into());
+                        open_file(e, out.trim().into());
 
                         Ok(())
                     });
@@ -145,8 +156,8 @@ fn main() -> anyhow::Result<()> {
                     Ok(())
                 })?;
 
-                g.bind(&["t"], "Open YAZI file picker", |s| {
-                    s.suspend(|s| {
+                g.bind(&["t"], "Open YAZI file picker", |e| {
+                    e.suspend(|e| {
                         let _ = std::fs::remove_file("/tmp/chooser");
                         Command::new("yazi")
                             .args(["--chooser-file", "/tmp/chooser"])
@@ -167,7 +178,7 @@ fn main() -> anyhow::Result<()> {
                                 continue;
                             }
 
-                            open_file(s, path);
+                            open_file(e, path);
                         }
 
                         Ok(())
@@ -256,18 +267,18 @@ fn main() -> anyhow::Result<()> {
         normal.bind_cmd(&["U"], "Redo", ["redo"])?;
         normal.bind_cmd(&["c"], "Toggle All-Cursor Mode", ["toggle_all_cursors"])?;
 
-        normal.bind(&["i"], "Enter Insert Mode", |s| {
-            s.get::<&mut InputState>().set_mode("insert");
+        normal.bind(&["i"], "Enter Insert Mode", |e| {
+            e.core.input.set_mode("insert");
 
-            commit_changes(s);
+            commit_changes(e);
 
             Ok(())
         })?;
 
-        normal.bind(&["d"], "Delete Selection", |s| {
-            let opts = *s.get::<&CursorOptions>();
+        normal.bind(&["d"], "Delete Selection", |e| {
+            let opts = e.core.cursor;
 
-            let Some(mut buf) = active_buffer(s) else {
+            let Some(mut buf) = active_buffer(e) else {
                 return Ok(());
             };
 
@@ -278,19 +289,19 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        normal.bind(&["C"], "Create new cursor below", |s| {
-            let Some(mut buf) = active_buffer(s) else {
+        normal.bind(&["C"], "Create new cursor below", |e| {
+            let Some(mut buf) = active_buffer(e) else {
                 return Ok(());
             };
 
             buf.duplicate();
-            buf.move_(1, 0, &CursorOptions::new());
+            buf.move_(1, 0, &text::CursorOptions::new());
 
             Ok(())
         })?;
 
-        normal.bind(&["m"], "Delete other cursors", |s| {
-            let Some(mut buf) = active_buffer(s) else {
+        normal.bind(&["m"], "Delete other cursors", |e| {
+            let Some(mut buf) = active_buffer(e) else {
                 return Ok(());
             };
 
@@ -321,8 +332,8 @@ fn main() -> anyhow::Result<()> {
             ],
         )?;
 
-        normal.bind(&["["], "Change Cursor Up", |s| {
-            let Some(mut buf) = active_buffer(s) else {
+        normal.bind(&["["], "Change Cursor Up", |e| {
+            let Some(mut buf) = active_buffer(e) else {
                 return Ok(());
             };
 
@@ -331,8 +342,8 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        normal.bind(&["]"], "Change Cursor Down", |s| {
-            let Some(mut buf) = active_buffer(s) else {
+        normal.bind(&["]"], "Change Cursor Down", |e| {
+            let Some(mut buf) = active_buffer(e) else {
                 return Ok(());
             };
 
@@ -341,8 +352,8 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        normal.bind(&[":"], "Command Mode", |s| {
-            plugins::command_line::command_mode(s);
+        normal.bind(&[":"], "Command Mode", |e| {
+            plugins::command_line::command_mode(e);
             Ok(())
         })?;
 
@@ -364,8 +375,8 @@ fn main() -> anyhow::Result<()> {
             false,
         )?;
 
-        normal.bind(&["?"], "Show layer inputs", |s| {
-            s.get::<&mut Flags>().set("input_tree_show", true);
+        normal.bind(&["?"], "Show layer inputs", |e| {
+            e.core.flags.set("input_tree_show", true);
             Ok(())
         })?;
     }
@@ -382,10 +393,10 @@ fn main() -> anyhow::Result<()> {
             false,
         )?;
 
-        insert.bind(&["escape"], "Switch to Normal mode", |s| {
-            s.get::<&mut InputState>().set_mode("normal");
+        insert.bind(&["escape"], "Switch to Normal mode", |e| {
+            e.core.input.set_mode("normal");
 
-            commit_changes(s);
+            commit_changes(e);
 
             Ok(())
         })?;
@@ -395,75 +406,62 @@ fn main() -> anyhow::Result<()> {
         plugins::insert::bind_insert(insert, Vec::<&str>::new(), CursorOverrides::new())?;
     }
 
-    let (layout, storage) = editor.get::<(&mut WindowLayout, &mut Storage)>();
-
-    let buf = text::BufferEntry::new_scratch("scratch_0");
-    let id = storage.insert(buf);
-    layout.active_mut().select(id);
-
-    let store = editor.get::<&mut tree_sitter::LanguageStore>();
-    store
-        .register(
-            "rust",
-            tree_sitter::Language::new(tree_sitter_rust::LANGUAGE),
-        )?
-        .with_extensions(["rs"]);
-
-    {
-        let pipeline = editor.get::<&mut Pipeline>();
-
-        pipeline
-            .highlighters
-            .push(ui::highlighters::TreeSitter)
-            .push(ui::highlighters::Cursor);
-
-        pipeline
-            .gutters
-            .push(ui::gutters::Gap(1))
-            .push(ui::gutters::LineNumber {
-                relative: true,
-                ..Default::default()
-            })
-            .push(ui::gutters::Gap(1))
-            .push(ui::gutters::VerticalBar);
-    }
-
-    {
-        let window_pipeline = editor.get::<&mut WindowPipeline>();
-
-        window_pipeline
-            .top
-            .push_row(|e| e.push_center(ui::bar::Tabs));
-
-        window_pipeline.set_border(ui::borders::LowProfile(BorderType::Thick));
-    }
-
-    {
-        let editor_pipeline = editor.get::<&mut EditorPipeline>();
-
-        editor_pipeline
-            .bottom
-            .push_row(|e| {
-                e.push_left(ui::bar::Gap(2))
-                    .push_left(ui::bar::Mode)
-                    .push_left(ui::bar::Gap(1))
-                    .push_left(ui::bar::Spinner::new())
-                    .push_right(ui::bar::Gap(2))
-                    .push_right(ui::bar::Clock::new("%I:%M %P"))
-            })
-            .push_row(|e| {
-                e.push_left(ui::bar::Gap(2))
-                    .push_left(plugins::command_line::StatusLine)
-                    .push_right(ui::bar::Gap(2))
-                    .push_right(ui::bar::Freda)
-            });
-    }
+    let id = editor
+        .core
+        .buffers
+        .insert(text::BufferEntry::new_scratch("scratch_0"));
+    editor.core.windows.active_mut().select(id);
 
     editor
-        .get::<&mut Overlays>()
-        .push(ui::overlays::InputTreePopup);
+        .core
+        .pipeline
+        .highlighters
+        .push(ui::highlighters::TreeSitter)
+        .push(ui::highlighters::Cursor);
 
-    theme::init_theme(&mut editor);
+    editor
+        .core
+        .pipeline
+        .gutters
+        .push(ui::gutters::Gap(1))
+        .push(ui::gutters::LineNumber {
+            relative: true,
+            ..Default::default()
+        })
+        .push(ui::gutters::Gap(1))
+        .push(ui::gutters::VerticalBar);
+
+    editor
+        .core
+        .window_pipeline
+        .top
+        .push_row(|e| e.push_center(ui::bar::Tabs));
+
+    editor
+        .core
+        .window_pipeline
+        .set_border(ui::borders::LowProfile(BorderType::Thick));
+
+    editor
+        .core
+        .editor_pipeline
+        .bottom
+        .push_row(|e| {
+            e.push_left(ui::bar::Gap(2))
+                .push_left(ui::bar::Mode)
+                .push_left(ui::bar::Gap(1))
+                .push_left(ui::bar::Spinner::new())
+                .push_right(ui::bar::Gap(2))
+                .push_right(ui::bar::Clock::new("%I:%M %P"))
+        })
+        .push_row(|e| {
+            e.push_left(ui::bar::Gap(2))
+                .push_left(plugins::command_line::StatusLine)
+        });
+
+    editor.core.overlays.push(ui::overlays::InputTreePopup);
+
+    theme::init_theme(&mut editor.core.theme);
 
     kwark::run(editor);
 

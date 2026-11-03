@@ -1,8 +1,7 @@
 use kwark_render::Gutter;
-use kwark_theme::Theme;
 use ratatui::widgets::{Paragraph, Widget};
 
-use kwark_core::State;
+use kwark_core::Editor;
 
 pub struct LineNumber {
     pub max_width: u16,
@@ -18,20 +17,20 @@ impl Default for LineNumber {
     }
 }
 
-impl Gutter<State> for LineNumber {
+impl<S: 'static> Gutter<Editor<S>> for LineNumber {
     fn width(&self) -> u16 {
         self.max_width
     }
 
     fn render(
         &mut self,
-        state: &mut State,
+        state: &mut Editor<S>,
         ctx: &kwark_render::LineCtx,
         _hl: &kwark_render::Highlight,
         area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) {
-        let line_theme = state.get::<&Theme>().get("gutter.line_number");
+        let line_theme = state.core.theme.get("gutter.line_number");
 
         let line_num = if self.relative {
             let caret = ctx.cursors[ctx.primary].caret();

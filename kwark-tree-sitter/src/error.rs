@@ -32,6 +32,9 @@ pub enum QueryLoadError {
     )]
     MissingPath(PathBuf),
 
+    #[error("The language store has no query folder")]
+    NoQueryFolder,
+
     #[error(transparent)]
     IO(#[from] std::io::Error),
 

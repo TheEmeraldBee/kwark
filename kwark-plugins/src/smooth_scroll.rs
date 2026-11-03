@@ -1,7 +1,6 @@
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use kwark_core::{events, prelude::*};
-use kwark_window::{Scroll, WindowLayout};
 
 /// The longest frame time one animation step covers
 const MAX_STEP: Duration = Duration::from_millis(18);
@@ -25,7 +24,7 @@ impl Plugin {
 
 /// The animated position of a buffer in a window
 #[derive(Default)]
-struct SmoothScroll {
+pub struct SmoothScroll {
     pos: Option<f32>,
 }
 
@@ -47,22 +46,42 @@ impl SmoothScroll {
     }
 }
 
-impl kwark_core::Plugin for Plugin {
-    fn register(&self, editor: &mut Editor) -> anyhow::Result<()> {
+impl PluginState for Plugin {
+    type State = HashMap<(LeafId, buffer::ID), SmoothScroll>;
+
+    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<Self::State> {
+        Ok(HashMap::new())
+    }
+}
+
+impl<S: Has<Plugin> + 'static> kwark_core::Plugin<S> for Plugin {
+    fn register(&self, editor: &mut Editor<S>) -> anyhow::Result<()> {
         let speed = self.speed;
 
         editor.events.on::<events::Frame>(move |s, frame| {
+            let (core, animations) = s.split::<Plugin>();
+
+            let mut next = HashMap::with_capacity(animations.len());
             let mut moving = false;
 
-            for window in s.get::<&mut WindowLayout>().windows_mut() {
-                let Some(res) = window.resources_mut() else {
+            for (leaf, window) in core.windows.leaves_mut() {
+                let Some(id) = window.selected() else {
+                    continue;
+                };
+                let Some(view) = window.view_mut() else {
                     continue;
                 };
 
-                let (scroll, smooth) = res.get_or_default::<(&mut Scroll, &mut SmoothScroll)>();
-                scroll.shown = smooth.step(scroll.top, frame.info.dt, speed);
-                moving |= scroll.shown.is_some();
+                let key = (leaf, id);
+                let mut smooth = animations.remove(&key).unwrap_or_default();
+
+                view.scroll.shown = smooth.step(view.scroll.top, frame.info.dt, speed);
+                moving |= view.scroll.shown.is_some();
+
+                next.insert(key, smooth);
             }
+
+            *animations = next;
 
             if moving {
                 s.redraw();

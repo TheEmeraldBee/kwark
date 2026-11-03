@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::State;
+use crate::Editor;
 
 /// Flag for the frame count in the bar
 pub const FRAME_COUNT_FLAG: &str = "debug_frame_count";
@@ -100,10 +100,10 @@ impl FrameInfo {
     }
 }
 
-impl State {
+impl<S: 'static> Editor<S> {
     /// Requests a frame as soon as the frame budget allows
     pub fn redraw(&mut self) {
-        self.get::<&mut Redraw>().request();
+        self.core.redraw.request();
     }
 }
 

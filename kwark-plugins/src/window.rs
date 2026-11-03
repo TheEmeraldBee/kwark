@@ -1,14 +1,22 @@
 use ratatui::layout::Direction;
 
 use kwark_core::prelude::*;
-use kwark_window::WindowLayout;
 
 /// Registers the `split`, `close_window`, `close_buffer`, `buffer`, `focus`, `resize`, `mode`, and `quit` commands
+#[derive(Default)]
 pub struct Plugin;
 
-impl kwark_core::Plugin for Plugin {
-    fn register(&self, editor: &mut Editor) -> anyhow::Result<()> {
-        let registry = editor.get::<&mut CommandRegistry>();
+impl PluginState for Plugin {
+    type State = ();
+
+    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl<S: 'static> kwark_core::Plugin<S> for Plugin {
+    fn register(&self, editor: &mut Editor<S>) -> anyhow::Result<()> {
+        let registry = &mut editor.core.commands;
 
         registry.register("split", |s, args| {
             let dir = args.str("dir", 0, "right");
@@ -18,7 +26,11 @@ impl kwark_core::Plugin for Plugin {
                 _ => return Err(anyhow::anyhow!("unknown split direction `{dir}`")),
             };
 
-            let (layout, storage) = s.get::<(&mut WindowLayout, &mut buffer::Storage)>();
+            let Core {
+                windows: layout,
+                buffers: storage,
+                ..
+            } = &mut s.core;
             layout.split(direction);
 
             const NAME_ROOT: &str = "scratch";
@@ -39,14 +51,14 @@ impl kwark_core::Plugin for Plugin {
         });
 
         registry.register("close_window", |s, _| {
-            let windows = s.get::<&mut WindowLayout>();
+            let windows = &mut s.core.windows;
             let active = windows.active_id();
             windows.close(active);
             Ok(())
         });
 
         registry.register("close_buffer", |s, _| {
-            let windows = s.get::<&mut WindowLayout>();
+            let windows = &mut s.core.windows;
             windows.active_mut().close_primary();
 
             if windows.active_mut().is_empty() {
@@ -65,7 +77,7 @@ impl kwark_core::Plugin for Plugin {
                 _ => return Err(anyhow::anyhow!("unknown buffer direction `{dir}`")),
             };
 
-            s.get::<&mut WindowLayout>().active_mut().move_primary(dist);
+            s.core.windows.active_mut().move_primary(dist);
 
             Ok(())
         });
@@ -80,8 +92,7 @@ impl kwark_core::Plugin for Plugin {
                 _ => return Err(anyhow::anyhow!("unknown focus direction `{dir}`")),
             };
 
-            s.get::<&mut WindowLayout>()
-                .focus_direction(direction, forward);
+            s.core.windows.focus_direction(direction, forward);
 
             Ok(())
         });
@@ -97,14 +108,14 @@ impl kwark_core::Plugin for Plugin {
                 _ => return Err(anyhow::anyhow!("unknown resize direction `{dir}`")),
             };
 
-            s.get::<&mut WindowLayout>().resize(direction, delta);
+            s.core.windows.resize(direction, delta);
 
             Ok(())
         });
 
         registry.register("mode", |s, args| {
             let name = args.str("name", 0, "normal").to_string();
-            s.get::<&mut InputState>().set_mode(name);
+            s.core.input.set_mode(name);
             Ok(())
         });
 

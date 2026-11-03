@@ -1,49 +1,42 @@
 use kwark_render::Element;
-use kwark_theme::Theme;
 use ratatui::widgets::{Paragraph, Widget};
 
-use kwark_core::{InputState, State, log::LogState};
+use kwark_core::{Editor, Has};
 
-use super::CommandLineState;
+use super::Plugin;
 
+/// The command line text, or the latest log message
 pub struct StatusLine;
 
-impl<C> Element<State, C> for StatusLine {
-    fn width(&mut self, _state: &mut State, _ctx: &C, available: u16) -> u16 {
+impl<S: Has<Plugin> + 'static, C> Element<Editor<S>, C> for StatusLine {
+    fn width(&mut self, _state: &mut Editor<S>, _ctx: &C, available: u16) -> u16 {
         available / 2
     }
 
-    fn height(&mut self, _state: &mut State, _ctx: &C) -> u16 {
+    fn height(&mut self, _state: &mut Editor<S>, _ctx: &C) -> u16 {
         1
     }
 
     fn render(
         &mut self,
-        state: &mut State,
+        state: &mut Editor<S>,
         _ctx: &C,
         area: ratatui::prelude::Rect,
         buf: &mut ratatui::prelude::Buffer,
     ) {
-        let mode = state.get::<&InputState>().mode().to_string();
+        let (core, command_line) = state.split::<Plugin>();
+        let theme = &core.theme;
 
-        let (style, text) = if state.has::<CommandLineState>() && mode == "command" {
-            state.get::<&mut LogState>().clear();
+        let (style, text) = if core.input.mode() == "command" {
+            core.log.clear();
             (
-                state.get::<&Theme>().get("statusline.command"),
-                format!(":{}", state.get::<&CommandLineState>().text()),
+                theme.get("statusline.command"),
+                format!(":{}", command_line.text()),
             )
-        } else if let Some((message, severity)) = state.get::<&LogState>().get().cloned() {
-            (
-                state
-                    .get::<&Theme>()
-                    .get(&format!("statusline.log.{}", severity)),
-                message,
-            )
+        } else if let Some((message, severity)) = core.log.get().cloned() {
+            (theme.get(&format!("statusline.log.{}", severity)), message)
         } else {
-            (
-                state.get::<&Theme>().get("statusline.empty"),
-                "".to_string(),
-            )
+            (theme.get("statusline.empty"), "".to_string())
         };
 
         Paragraph::new(text).style(style).render(area, buf);

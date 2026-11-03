@@ -1,24 +1,22 @@
-use kwark_text::CursorOptions;
-
 use kwark_core::prelude::*;
 
 use crate::{cursor_overrides::CursorOverrides, internal_utils::*};
 
-/// Initializes the editor to work with this module
-pub fn init(editor: &mut Editor) -> anyhow::Result<()> {
-    editor.insert(CursorOptions::new());
-
-    Ok(())
-}
-
-/// Registers the `insert`, `delete`, `undo`, and `redo` commands, calling [`init`] itself
+/// Registers the `insert`, `delete`, `undo`, and `redo` commands
+#[derive(Default)]
 pub struct Plugin;
 
-impl kwark_core::Plugin for Plugin {
-    fn register(&self, editor: &mut Editor) -> anyhow::Result<()> {
-        let _ = init(editor);
+impl PluginState for Plugin {
+    type State = ();
 
-        let registry = editor.get::<&mut CommandRegistry>();
+    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl<S: 'static> kwark_core::Plugin<S> for Plugin {
+    fn register(&self, editor: &mut Editor<S>) -> anyhow::Result<()> {
+        let registry = &mut editor.core.commands;
 
         registry.register("insert", |s, args| {
             let text = args.str("text", 0, "");
@@ -26,7 +24,7 @@ impl kwark_core::Plugin for Plugin {
                 return Ok(());
             }
 
-            let opts = *s.get::<&CursorOptions>();
+            let opts = s.core.cursor;
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
@@ -39,7 +37,7 @@ impl kwark_core::Plugin for Plugin {
 
         registry.register("delete", |s, args| {
             let before = args.bool("before", 0, false);
-            let opts = *s.get::<&CursorOptions>();
+            let opts = s.core.cursor;
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
@@ -86,12 +84,12 @@ fn join_prefix<'a>(prefix: &'a [&'a str], bind: &'a &'a str) -> Vec<&'a &'a str>
 }
 
 /// Creates an insertion function for use in [`InputTree::bind`]
-pub fn create_insertion(
+pub fn create_insertion<S: 'static>(
     text: &str,
     overrides: CursorOverrides,
-) -> impl Fn(&mut State) -> anyhow::Result<()> {
-    move |s: &mut State| {
-        let opts = overrides.combine(*s.get::<&CursorOptions>());
+) -> impl Fn(&mut Editor<S>) -> anyhow::Result<()> {
+    move |s: &mut Editor<S>| {
+        let opts = overrides.combine(s.core.cursor);
 
         let Some(mut buf) = active_buffer(s) else {
             return Ok(());
@@ -104,8 +102,8 @@ pub fn create_insertion(
 }
 
 /// Binds all important insertion keys for use in a insertion-like system
-pub fn bind_insert<'a>(
-    tree: &mut InputTree,
+pub fn bind_insert<'a, S: 'static>(
+    tree: &mut InputTree<S>,
     prefix: impl IntoIterator<Item = &'a str>,
     overrides: CursorOverrides,
 ) -> anyhow::Result<()> {
@@ -131,7 +129,7 @@ pub fn bind_insert<'a>(
 
     tree.set_backup(
         |s, chord| {
-            let opts = *s.get::<&CursorOptions>();
+            let opts = s.core.cursor;
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());

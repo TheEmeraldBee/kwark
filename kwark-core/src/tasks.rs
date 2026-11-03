@@ -2,7 +2,7 @@ use std::{collections::HashSet, future::Future};
 
 use tokio::task::AbortHandle;
 
-use crate::{CallbackSender, Runtime, State};
+use crate::{CallbackSender, Editor};
 
 /// An identifier for a background task
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -66,40 +66,40 @@ impl TaskHandle {
 }
 
 /// The end marker for a task
-struct EndGuard {
-    sender: CallbackSender,
+struct EndGuard<S: 'static> {
+    sender: CallbackSender<S>,
     id: TaskId,
 }
 
-impl Drop for EndGuard {
+impl<S: 'static> Drop for EndGuard<S> {
     fn drop(&mut self) {
         let id = self.id;
         self.sender.send_fn(move |e| {
-            e.get::<&mut Tasks>().end(id);
+            e.core.tasks.end(id);
             Ok(())
         });
     }
 }
 
-impl State {
+impl<S: 'static> Editor<S> {
     /// Runs a future in the background, then `done` with its result
     pub fn spawn<T: Send + 'static>(
         &mut self,
         fut: impl Future<Output = T> + Send + 'static,
-        done: impl FnOnce(&mut State, T) -> anyhow::Result<()> + Send + 'static,
+        done: impl FnOnce(&mut Editor<S>, T) -> anyhow::Result<()> + Send + 'static,
     ) -> TaskHandle {
         let mut sender = self.sender();
-        let id = self.get::<&mut Tasks>().begin();
+        let id = self.core.tasks.begin();
         let guard = EndGuard {
             sender: sender.clone(),
             id,
         };
 
-        let handle = self.get::<&Runtime>().spawn(async move {
+        let handle = self.runtime().spawn(async move {
             let _guard = guard;
             let value = fut.await;
 
-            sender.send_fn(move |e| done(&mut e.state, value));
+            sender.send_fn(move |e| done(e, value));
         });
 
         TaskHandle {
@@ -112,20 +112,20 @@ impl State {
     pub fn spawn_blocking<T: Send + 'static>(
         &mut self,
         work: impl FnOnce() -> T + Send + 'static,
-        done: impl FnOnce(&mut State, T) -> anyhow::Result<()> + Send + 'static,
+        done: impl FnOnce(&mut Editor<S>, T) -> anyhow::Result<()> + Send + 'static,
     ) -> TaskHandle {
         let mut sender = self.sender();
-        let id = self.get::<&mut Tasks>().begin();
+        let id = self.core.tasks.begin();
         let guard = EndGuard {
             sender: sender.clone(),
             id,
         };
 
-        let handle = self.get::<&Runtime>().spawn_blocking(move || {
+        let handle = self.runtime().spawn_blocking(move || {
             let _guard = guard;
             let value = work();
 
-            sender.send_fn(move |e| done(&mut e.state, value));
+            sender.send_fn(move |e| done(e, value));
         });
 
         TaskHandle {

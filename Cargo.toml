@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["flavors/*", "kwark", "kwark-buffer", "kwark-bus", "kwark-core", "kwark-input", "kwark-lsp", "kwark-plugins", "kwark-render", "kwark-resources", "kwark-text", "kwark-theme", "kwark-tree-sitter", "kwark-ui", "kwark-window"]
+members = ["flavors/*", "kwark", "kwark-buffer", "kwark-bus", "kwark-core", "kwark-input", "kwark-lsp", "kwark-plugins", "kwark-render", "kwark-text", "kwark-theme", "kwark-tree-sitter", "kwark-ui", "kwark-window"]
 
 [workspace.package]
 version = "0.0.0"
@@ -15,7 +15,6 @@ kwark-core = { path = "./kwark-core", version = "0.0.0" }
 kwark-input = { path = "./kwark-input", version = "0.0.0" }
 kwark-plugins = { path = "./kwark-plugins", version = "0.0.0" }
 kwark-render = { path = "./kwark-render", version = "0.0.0" }
-kwark-resources = { path = "./kwark-resources", version = "0.0.0" }
 kwark-text = { path = "./kwark-text", version = "0.0.0" }
 kwark-theme = { path = "./kwark-theme", version = "0.0.0" }
 kwark-tree-sitter = { path = "./kwark-tree-sitter", version = "0.0.0" }

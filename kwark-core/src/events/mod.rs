@@ -1,101 +1,96 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    rc::Rc,
 };
 
-use crate::state::State;
+use crate::Editor;
 
 mod event_kinds;
 pub use event_kinds::*;
 
-pub type EventSubscriber<T> = Box<dyn Fn(&mut State, &mut T) -> anyhow::Result<()>>;
+pub type EventSubscriber<S, T> = Rc<dyn Fn(&mut Editor<S>, &mut T) -> anyhow::Result<()>>;
 
-struct EventHandler<T> {
-    subscribers: Vec<EventSubscriber<T>>,
+struct EventHandler<S: 'static, T> {
+    subscribers: Vec<EventSubscriber<S, T>>,
 }
 
-impl<T> Default for EventHandler<T> {
-    fn default() -> Self {
-        Self {
-            subscribers: vec![],
-        }
-    }
+/// A type-erased handle onto an `EventHandler`, dispatchable by runtime `TypeId`
+trait ErasedEventHandler<S: 'static> {
+    fn handle_dyn(&self, editor: &mut Editor<S>, event: &mut dyn Any) -> anyhow::Result<()>;
+
+    fn as_any(&self) -> &dyn Any;
 }
 
-impl<T> EventHandler<T> {
-    fn handle(&self, state: &mut State, event: &mut T) -> anyhow::Result<()> {
+impl<S: 'static, T: 'static> ErasedEventHandler<S> for EventHandler<S, T> {
+    fn handle_dyn(&self, editor: &mut Editor<S>, event: &mut dyn Any) -> anyhow::Result<()> {
+        let event = event
+            .downcast_mut::<T>()
+            .expect("event was stored under its own TypeId");
+
         for sub in &self.subscribers {
-            sub(state, event)?;
+            sub(editor, event)?;
         }
 
         Ok(())
     }
-}
 
-/// A type-erased handle onto an `EventHandler<T>`, dispatchable by runtime `TypeId`
-trait ErasedEventHandler {
-    fn handle_dyn(&self, state: &mut State, event: &mut dyn Any) -> anyhow::Result<()>;
-
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-
-impl<T: 'static> ErasedEventHandler for EventHandler<T> {
-    fn handle_dyn(&self, state: &mut State, event: &mut dyn Any) -> anyhow::Result<()> {
-        let event = event
-            .downcast_mut::<T>()
-            .expect("event was stored under its own TypeId");
-        self.handle(state, event)
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 }
 
 /// A general purpose event subscription and execution system
-#[derive(Default)]
-pub struct EventStorage {
-    events: HashMap<TypeId, Box<dyn ErasedEventHandler>>,
+pub struct EventStorage<S: 'static> {
+    events: HashMap<TypeId, Rc<dyn ErasedEventHandler<S>>>,
 }
 
-impl EventStorage {
+impl<S: 'static> Default for EventStorage<S> {
+    fn default() -> Self {
+        Self {
+            events: HashMap::new(),
+        }
+    }
+}
+
+impl<S: 'static> EventStorage<S> {
     /// Register a subscriber for an event type
     pub fn on<T: 'static>(
         &mut self,
-        handler: impl Fn(&mut State, &mut T) -> anyhow::Result<()> + 'static,
+        handler: impl Fn(&mut Editor<S>, &mut T) -> anyhow::Result<()> + 'static,
     ) {
+        let mut subscribers = self
+            .events
+            .get(&TypeId::of::<T>())
+            .and_then(|x| x.as_any().downcast_ref::<EventHandler<S, T>>())
+            .map(|x| x.subscribers.clone())
+            .unwrap_or_default();
+
+        subscribers.push(Rc::new(handler));
+
         self.events
-            .entry(TypeId::of::<T>())
-            .or_insert_with(|| Box::new(EventHandler::<T>::default()))
-            .as_any_mut()
-            .downcast_mut::<EventHandler<T>>()
-            .expect("Type was stored under type ID and should be downcastable")
-            .subscribers
-            .push(Box::new(handler));
+            .insert(TypeId::of::<T>(), Rc::new(EventHandler { subscribers }));
     }
 
-    /// Handles a single event
-    pub fn handle<T: 'static>(&mut self, state: &mut State, event: &mut T) -> anyhow::Result<()> {
-        self.events
-            .entry(TypeId::of::<T>())
-            .or_insert_with(|| Box::new(EventHandler::<T>::default()))
-            .as_any_mut()
-            .downcast_mut::<EventHandler<T>>()
-            .expect("Type was stored under type ID and should be downcastable")
-            .handle(state, event)
+    fn handler(&self, type_id: TypeId) -> Option<Rc<dyn ErasedEventHandler<S>>> {
+        self.events.get(&type_id).cloned()
+    }
+}
+
+impl<S: 'static> Editor<S> {
+    /// Runs the subscribers of an event
+    pub fn emit<T: 'static>(&mut self, event: &mut T) -> anyhow::Result<()> {
+        match self.events.handler(TypeId::of::<T>()) {
+            Some(handler) => handler.handle_dyn(self, event),
+            None => Ok(()),
+        }
     }
 
-    /// Handles a single event whose concrete type is only known at runtime
-    pub fn handle_any(
-        &mut self,
-        state: &mut State,
-        type_id: TypeId,
-        mut event: Box<dyn Any>,
-    ) -> anyhow::Result<()> {
-        let Some(handler) = self.events.get(&type_id) else {
-            return Ok(());
-        };
-
-        handler.handle_dyn(state, event.as_mut())
+    /// Runs the subscribers of an event whose concrete type is only known at runtime
+    pub fn emit_any(&mut self, type_id: TypeId, mut event: Box<dyn Any>) -> anyhow::Result<()> {
+        match self.events.handler(type_id) {
+            Some(handler) => handler.handle_dyn(self, event.as_mut()),
+            None => Ok(()),
+        }
     }
 }

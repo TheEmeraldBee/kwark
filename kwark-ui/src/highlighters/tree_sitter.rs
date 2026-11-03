@@ -1,9 +1,7 @@
 use std::ops::Range;
 
-use kwark_core::State;
+use kwark_core::Editor;
 use kwark_render::*;
-use kwark_theme::Theme;
-use kwark_tree_sitter::store::LanguageStore;
 use ratatui::style::Style;
 
 struct TreeSitterHighlight {
@@ -19,9 +17,9 @@ fn sort_for_patching(highlights: &mut [TreeSitterHighlight]) {
 
 pub struct TreeSitter;
 
-impl Highlighter<State> for TreeSitter {
-    fn highlight(&mut self, state: &mut State, ctx: &LineCtx) -> Option<Highlight> {
-        let (theme, store) = state.get::<(&Theme, &mut LanguageStore)>();
+impl<S: 'static> Highlighter<Editor<S>> for TreeSitter {
+    fn highlight(&mut self, state: &mut Editor<S>, ctx: &LineCtx) -> Option<Highlight> {
+        let (theme, store) = (&state.core.theme, &mut state.core.languages);
 
         let tree = ctx.tree?;
 

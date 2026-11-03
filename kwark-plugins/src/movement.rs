@@ -1,16 +1,14 @@
-use kwark_text::CursorOptions;
-
 use kwark_core::prelude::*;
 
 use crate::{cursor_overrides::CursorOverrides, internal_utils::*};
 
-fn create_move(
+fn create_move<S: 'static>(
     lines: isize,
     columns: isize,
     options: CursorOverrides,
-) -> impl Fn(&mut State) -> anyhow::Result<()> {
-    move |s: &mut State| {
-        let opts = options.combine(*s.get::<&CursorOptions>());
+) -> impl Fn(&mut Editor<S>) -> anyhow::Result<()> {
+    move |s: &mut Editor<S>| {
+        let opts = options.combine(s.core.cursor);
 
         let Some(mut buf) = active_buffer(s) else {
             return Ok(());
@@ -208,12 +206,12 @@ fn range_to_target(
 }
 
 /// Returns a command that moves the cursor to the anchor and caret returned by `unit`
-pub fn create_motion(
+pub fn create_motion<S: 'static>(
     unit: impl Fn(usize, usize, &text::Rope) -> (usize, usize),
     options: CursorOverrides,
-) -> impl Fn(&mut State) -> anyhow::Result<()> {
-    move |s: &mut State| {
-        let opts = options.combine(*s.get::<&CursorOptions>());
+) -> impl Fn(&mut Editor<S>) -> anyhow::Result<()> {
+    move |s: &mut Editor<S>| {
+        let opts = options.combine(s.core.cursor);
 
         let Some(mut buf) = active_buffer(s) else {
             return Ok(());
@@ -241,21 +239,21 @@ fn target_arg(args: &Args, name: &str, pos: usize) -> anyhow::Result<Option<text
     }
 }
 
-/// Initializes the editor to work with this module
-pub fn init(editor: &mut Editor) -> anyhow::Result<()> {
-    editor.insert(CursorOptions::new());
-
-    Ok(())
-}
-
-/// Registers the `move`, `motion`, `set`, `change_cursor`, `toggle_all_cursors`, and `clear_selection` commands, calling [`init`] itself
+/// Registers the `move`, `motion`, `set`, `change_cursor`, `toggle_all_cursors`, and `clear_selection` commands
+#[derive(Default)]
 pub struct Plugin;
 
-impl kwark_core::Plugin for Plugin {
-    fn register(&self, editor: &mut Editor) -> anyhow::Result<()> {
-        let _ = init(editor);
+impl PluginState for Plugin {
+    type State = ();
 
-        let registry = editor.get::<&mut CommandRegistry>();
+    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl<S: 'static> kwark_core::Plugin<S> for Plugin {
+    fn register(&self, editor: &mut Editor<S>) -> anyhow::Result<()> {
+        let registry = &mut editor.core.commands;
 
         registry.register("move", |s, args| {
             let dir = args.str("dir", 0, "right");
@@ -273,7 +271,7 @@ impl kwark_core::Plugin for Plugin {
             };
 
             let overrides = CursorOverrides::new().extend(extend).wrap(wrap).all(all);
-            let opts = overrides.combine(*s.get::<&CursorOptions>());
+            let opts = overrides.combine(s.core.cursor);
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
@@ -302,7 +300,7 @@ impl kwark_core::Plugin for Plugin {
             };
 
             let overrides = CursorOverrides::new().extend(extend).wrap(wrap).all(all);
-            let opts = overrides.combine(*s.get::<&CursorOptions>());
+            let opts = overrides.combine(s.core.cursor);
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
@@ -326,7 +324,7 @@ impl kwark_core::Plugin for Plugin {
         });
 
         registry.register("toggle_all_cursors", |s, _| {
-            let options = s.get::<&mut CursorOptions>();
+            let options = &mut s.core.cursor;
             options.all = !options.all;
             Ok(())
         });
@@ -336,7 +334,7 @@ impl kwark_core::Plugin for Plugin {
                 all: args.get("all", 0).and_then(ArgValue::as_bool),
                 ..CursorOverrides::new()
             };
-            let opts = overrides.combine(*s.get::<&CursorOptions>());
+            let opts = overrides.combine(s.core.cursor);
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
@@ -356,7 +354,7 @@ impl kwark_core::Plugin for Plugin {
                 all: args.get("all", 3).and_then(ArgValue::as_bool),
                 ..CursorOverrides::new()
             };
-            let opts = overrides.combine(*s.get::<&CursorOptions>());
+            let opts = overrides.combine(s.core.cursor);
 
             let Some(mut buf) = active_buffer(s) else {
                 return Ok(());
@@ -377,8 +375,8 @@ impl kwark_core::Plugin for Plugin {
 /// Put `""` to ignore the modifier prefix
 ///
 /// For more info, see [`bind_movement`]
-pub fn bind_arrows(
-    tree: &mut InputTree,
+pub fn bind_arrows<S: 'static>(
+    tree: &mut InputTree<S>,
     prefix: &[&str],
     modifier_prefix: &str,
     overrides: CursorOverrides,
@@ -408,8 +406,8 @@ pub fn bind_arrows(
 /// Put `""` to ignore the modifier prefix
 ///
 /// For more info, see [`bind_movement`]
-pub fn bind_hjkl(
-    tree: &mut InputTree,
+pub fn bind_hjkl<S: 'static>(
+    tree: &mut InputTree<S>,
     prefix: &[&str],
     modifier_prefix: &str,
     overrides: CursorOverrides,
@@ -435,8 +433,8 @@ pub fn bind_hjkl(
 ///
 /// `overrides` allows you to override specific parts of the globally stored cursor
 #[allow(clippy::too_many_arguments)]
-pub fn bind(
-    tree: &mut InputTree,
+pub fn bind<S: 'static>(
+    tree: &mut InputTree<S>,
     prefix_bind: &[&str],
     left: &str,
     right: &str,
