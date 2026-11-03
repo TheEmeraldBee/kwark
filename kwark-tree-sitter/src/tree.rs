@@ -28,9 +28,7 @@ impl Layer {
             .get_parser(lang)
             .ok_or_else(|| Error::NoLanguage(lang.to_string()))?;
 
-        if !included_ranges.is_empty() {
-            parser.set_included_ranges(&included_ranges)?;
-        }
+        parser.set_included_ranges(&included_ranges)?;
 
         let tree = parser
             .parse_with_options(&mut parse_callback(source), None, None)
@@ -75,9 +73,7 @@ impl Layer {
                 .get_parser(&self.language)
                 .ok_or_else(|| Error::NoLanguage(self.language.clone()))?;
 
-            if !self.included_ranges.is_empty() {
-                parser.set_included_ranges(&self.included_ranges)?;
-            }
+            parser.set_included_ranges(&self.included_ranges)?;
 
             self.tree = parser
                 .parse_with_options(&mut parse_callback(source), Some(&self.tree), None)
@@ -220,5 +216,53 @@ impl SyntaxTree {
     /// Walks every layer, depth first
     pub fn layers(&self) -> impl Iterator<Item = &Layer> {
         self.root.walk()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::position::Point;
+
+    fn store_with_rust() -> LanguageStore {
+        let queries = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../flavors/default/queries");
+        let mut store = LanguageStore::new(queries).unwrap();
+
+        store
+            .register(
+                "rust",
+                crate::store::Language::new(tree_sitter_rust::LANGUAGE),
+            )
+            .unwrap();
+
+        store
+    }
+
+    #[test]
+    fn reparse_after_self_injection_covers_whole_file() {
+        let mut store = store_with_rust();
+
+        let before = ropey::Rope::from_str("vec![1];\nfn main() {}\n");
+        let mut tree = SyntaxTree::parse(&mut store, "rust", &before).unwrap();
+
+        let after = ropey::Rope::from_str("// c\nvec![1];\nfn main() {}\n");
+        let edit = Edit {
+            start_byte: 0,
+            old_end_byte: 0,
+            new_end_byte: 5,
+            start_point: Point { row: 0, column: 0 },
+            old_end_point: Point { row: 0, column: 0 },
+            new_end_point: Point { row: 1, column: 0 },
+        };
+        tree.reparse(&mut store, &[edit], &after).unwrap();
+
+        let fresh = SyntaxTree::parse(&mut store_with_rust(), "rust", &after).unwrap();
+
+        assert_eq!(
+            tree.root().root_node().to_sexp(),
+            fresh.root().root_node().to_sexp()
+        );
     }
 }

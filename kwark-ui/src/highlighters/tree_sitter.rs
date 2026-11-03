@@ -3,7 +3,7 @@ use std::ops::Range;
 use kwark_core::State;
 use kwark_render::*;
 use kwark_theme::Theme;
-use kwark_tree_sitter::{query::Ranged, store::LanguageStore};
+use kwark_tree_sitter::store::LanguageStore;
 use ratatui::style::Style;
 
 struct TreeSitterHighlight {
@@ -12,14 +12,9 @@ struct TreeSitterHighlight {
     priority: usize,
 }
 
-impl Ranged for TreeSitterHighlight {
-    fn range(&self) -> Range<usize> {
-        self.range.clone()
-    }
-
-    fn priority(&self) -> usize {
-        self.priority
-    }
+/// Orders highlights so that nested and higher-priority captures come last
+fn sort_for_patching(highlights: &mut [TreeSitterHighlight]) {
+    highlights.sort_by_key(|h| (std::cmp::Reverse(h.range.len()), h.priority));
 }
 
 pub struct TreeSitter;
@@ -33,7 +28,7 @@ impl Highlighter<State> for TreeSitter {
         let line_start = ctx.rope.line_to_byte(ctx.line);
         let line_end = line_start + ctx.text.len_bytes();
 
-        let highlights = tree
+        let mut highlights = tree
             .query(store, ctx.rope, "highlights")
             .unwrap()
             .in_range(line_start..line_end)
@@ -47,16 +42,9 @@ impl Highlighter<State> for TreeSitter {
                     })
                     .collect::<Vec<_>>()
             })
-            .combine(|a, b| {
-                let combined_style = combine([a.style, b.style]);
-                let range = a.range.start.min(b.range.start)..a.range.end.max(b.range.end);
-                TreeSitterHighlight {
-                    range,
-                    style: combined_style,
-                    priority: a.priority.max(b.priority),
-                }
-            })
             .finish();
+
+        sort_for_patching(&mut highlights);
 
         let col_start = ctx.rope.byte_to_char(line_start);
 
@@ -79,5 +67,64 @@ impl Highlighter<State> for TreeSitter {
             .collect::<Vec<_>>();
 
         Some(Highlight::plain(spans))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::style::Color;
+
+    fn hl(range: Range<usize>, color: Color, priority: usize) -> TreeSitterHighlight {
+        TreeSitterHighlight {
+            range,
+            style: Style::default().fg(color),
+            priority,
+        }
+    }
+
+    fn resolve(mut highlights: Vec<TreeSitterHighlight>) -> Highlight {
+        sort_for_patching(&mut highlights);
+
+        Highlight::plain(
+            highlights
+                .into_iter()
+                .map(|h| StyleSpan {
+                    range: h.range,
+                    style: h.style,
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn nested_capture_keeps_outer_style_around_it() {
+        // An escape inside a string, with the string pattern declared later
+        let hl = resolve(vec![hl(0..10, Color::Green, 5), hl(3..5, Color::Red, 2)]);
+
+        assert_eq!(hl.style_at(1).fg, Some(Color::Green));
+        assert_eq!(hl.style_at(3).fg, Some(Color::Red));
+        assert_eq!(hl.style_at(7).fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn later_pattern_wins_on_the_same_node() {
+        let hl = resolve(vec![hl(0..3, Color::Blue, 9), hl(0..3, Color::White, 1)]);
+
+        assert_eq!(hl.style_at(1).fg, Some(Color::Blue));
+    }
+
+    #[test]
+    fn neighbors_inside_a_wide_capture_stay_separate() {
+        let hl = resolve(vec![
+            hl(0..20, Color::Green, 1),
+            hl(2..4, Color::Red, 3),
+            hl(10..12, Color::White, 0),
+        ]);
+
+        assert_eq!(hl.style_at(2).fg, Some(Color::Red));
+        assert_eq!(hl.style_at(6).fg, Some(Color::Green));
+        assert_eq!(hl.style_at(10).fg, Some(Color::White));
+        assert_eq!(hl.style_at(15).fg, Some(Color::Green));
     }
 }

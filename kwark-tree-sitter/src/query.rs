@@ -10,18 +10,6 @@ use crate::{
     tree::{Layer, SyntaxTree},
 };
 
-/// A type to retrieve a byte-range
-pub trait Ranged {
-    fn range(&self) -> Range<usize>;
-
-    /// This item's priority when it overlaps another at the same start
-    ///
-    /// Higher wins. Defaults to `0` for types with no notion of priority
-    fn priority(&self) -> usize {
-        0
-    }
-}
-
 /// One query match, with its source layer and `#set!` directives attached
 pub struct Match<'a> {
     inner: &'a tree_sitter::QueryMatch<'a, 'a>,
@@ -116,43 +104,8 @@ fn run_layer<S: Source, T>(
 /// The result of `.map`
 pub struct Mapped<T>(Vec<T>);
 
-impl<T: Ranged> Mapped<T> {
-    /// Sorts by range (ties broken by ascending priority), then folds `f`
-    /// across every overlapping pair, left to right
-    ///
-    /// Within a pair, `f` is expected to prefer `b`'s data when the two
-    /// conflict, since `b` is always the higher-priority (or later-starting)
-    /// item of the two
-    pub fn combine(mut self, f: impl Fn(T, T) -> T) -> Combined<T> {
-        self.0.sort_by_key(|t| (t.range().start, t.priority()));
-
-        let mut out: Vec<T> = Vec::with_capacity(self.0.len());
-
-        for item in self.0 {
-            match out.pop() {
-                Some(last) if ranges_overlap(&last.range(), &item.range()) => {
-                    out.push(f(last, item));
-                }
-                Some(last) => {
-                    out.push(last);
-                    out.push(item);
-                }
-                None => out.push(item),
-            }
-        }
-
-        Combined(out)
-    }
-}
-
-fn ranges_overlap(a: &Range<usize>, b: &Range<usize>) -> bool {
-    a.start < b.end && b.start < a.end
-}
-
-/// The result of `.combine`
-pub struct Combined<T>(Vec<T>);
-
-impl<T> Combined<T> {
+impl<T> Mapped<T> {
+    /// Returns every mapped item
     pub fn finish(self) -> Vec<T> {
         self.0
     }
