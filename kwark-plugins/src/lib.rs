@@ -18,3 +18,6 @@ pub mod window;
 pub mod command_line;
 
 pub mod editor_commands;
+
+/// Animated scrolling for windows
+pub mod smooth_scroll;

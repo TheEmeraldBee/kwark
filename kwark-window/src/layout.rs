@@ -273,6 +273,11 @@ impl WindowLayout {
         }
     }
 
+    /// Returns every window in the layout
+    pub fn windows_mut(&mut self) -> impl Iterator<Item = &mut Window> {
+        self.leaves.values_mut().map(|entry| &mut entry.window)
+    }
+
     /// Updates every window in the layout based on the buffers in storage
     pub fn update_all(&mut self, bufs: &buffer::Storage) {
         for entry in self.leaves.values_mut() {
@@ -405,9 +410,10 @@ impl WindowLayout {
         let text_rect = window.content_rect()?;
 
         let id = window.selected()?;
-        let pos = storage
-            .get(&id)?
-            .hit_test(pipeline, state, text_rect, window.scroll_shown(), point)?;
+        let pos =
+            storage
+                .get(&id)?
+                .hit_test(pipeline, state, text_rect, window.scroll_shown(), point)?;
         Some((leaf, id, pos))
     }
 
@@ -522,7 +528,11 @@ mod test {
         window.select(buffer::ID::Widget(0));
 
         window.scroll_by(3, 10);
-        window.resources_mut().unwrap().get_or_default::<&mut crate::Scroll>().shown = Some(1);
+        window
+            .resources_mut()
+            .unwrap()
+            .get_or_default::<&mut crate::Scroll>()
+            .shown = Some(1);
 
         assert_eq!(window.scroll_shown(), 1);
     }

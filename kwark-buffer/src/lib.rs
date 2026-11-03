@@ -747,7 +747,10 @@ mod test {
         let mut storage = Storage::new(bus);
 
         let id = storage.insert(text::BufferEntry::new_scratch("a"));
-        *storage.resources_mut(&id).unwrap().get_or_default::<&mut u32>() = 7;
+        *storage
+            .resources_mut(&id)
+            .unwrap()
+            .get_or_default::<&mut u32>() = 7;
         assert_eq!(storage.resources(&id).unwrap().get_ref::<&u32>(), Ok(&7));
 
         storage.insert(text::BufferEntry::new_scratch("a"));

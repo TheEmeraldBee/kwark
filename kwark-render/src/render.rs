@@ -449,7 +449,14 @@ mod test {
             style: Style::new().bg(ratatui::style::Color::Green),
         }]);
 
-        render_plain(&line_ctx, &hl, &[], &[("\t", &line_ctx.tab)], area, &mut buf);
+        render_plain(
+            &line_ctx,
+            &hl,
+            &[],
+            &[("\t", &line_ctx.tab)],
+            area,
+            &mut buf,
+        );
 
         assert_eq!(plain_cell(&line_ctx, area, 0), Some(Position::new(0, 0)));
         assert_eq!(plain_cell(&line_ctx, area, 1), Some(Position::new(3, 0)));

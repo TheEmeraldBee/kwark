@@ -84,7 +84,10 @@ impl fmt::Display for Error {
         match self {
             Error::NotFound(name) => write!(f, "type `{name}` is not stored"),
             Error::Conflict(name) => {
-                write!(f, "type `{name}` is requested more than once in a mutable fetch")
+                write!(
+                    f,
+                    "type `{name}` is requested more than once in a mutable fetch"
+                )
             }
         }
     }

@@ -93,6 +93,7 @@ fn main() -> anyhow::Result<()> {
     editor.install(plugins::insert::Plugin)?;
     editor.install(plugins::window::Plugin)?;
     editor.install(plugins::command_line::Plugin)?;
+    editor.install(plugins::smooth_scroll::Plugin::new(40.0))?;
 
     let input = editor.get::<&mut InputState>();
 
@@ -101,13 +102,13 @@ fn main() -> anyhow::Result<()> {
 
         normal.bind(&["ctrl-d"], "Scroll Down", |s| {
             let leaf = s.get::<&WindowLayout>().active_id();
-            scroll_window(s, leaf, 10);
+            scroll_window(s, leaf, 40);
             Ok(())
         })?;
 
         normal.bind(&["ctrl-u"], "Scroll Up", |s| {
             let leaf = s.get::<&WindowLayout>().active_id();
-            scroll_window(s, leaf, -10);
+            scroll_window(s, leaf, -40);
             Ok(())
         })?;
 
