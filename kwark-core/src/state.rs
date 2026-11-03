@@ -1,11 +1,11 @@
 use std::{
-    any::{Any, TypeId},
+    any::Any,
     collections::HashMap,
-    fmt,
     ops::{Deref, DerefMut},
 };
 
 use kwark_bus::EventSender;
+use kwark_resources::{FetchMut, Resources};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{Callback, CallbackSender};
@@ -36,7 +36,7 @@ impl Flags {
 pub struct State {
     callback_tx: UnboundedSender<Callback>,
     bus: EventSender,
-    inner: HashMap<TypeId, Box<dyn Any>>,
+    resources: Resources,
 }
 
 impl State {
@@ -44,7 +44,7 @@ impl State {
         let mut val = Self {
             callback_tx,
             bus,
-            inner: HashMap::default(),
+            resources: Resources::new(),
         };
 
         val.insert(Flags::default());
@@ -54,17 +54,17 @@ impl State {
 
     /// Insert a type into the typemap
     pub fn insert<T: Any + 'static>(&mut self, data: T) {
-        self.inner.insert(TypeId::of::<T>(), Box::new(data));
+        self.resources.insert(data);
     }
 
     /// Checks whether a type is within the state
     pub fn has<T: Any + 'static>(&self) -> bool {
-        self.inner.contains_key(&TypeId::of::<T>())
+        self.resources.contains::<T>()
     }
 
     /// Gets a set of items out from the TypeMap
-    pub fn get<'a, T: GetManyAny<'a>>(&'a mut self) -> T {
-        T::get_many_any(&mut self.inner).expect("Types should be checked and inserted early")
+    pub fn get<'a, T: FetchMut<'a>>(&'a mut self) -> T {
+        self.resources.get().unwrap_or_else(|e| panic!("{e}"))
     }
 
     /// Pull/take the value out of the editor
@@ -73,12 +73,9 @@ impl State {
     /// You should almost **always** insert the
     /// state back into the editor when you are done with it
     pub fn take<T: Any + 'static>(&mut self) -> T {
-        *self
-            .inner
-            .remove(&TypeId::of::<T>())
-            .expect("Type expected to exist within the editor")
-            .downcast::<T>()
-            .expect("Value should be the right type")
+        self.resources
+            .remove()
+            .unwrap_or_else(|| panic!("type `{}` is not stored", std::any::type_name::<T>()))
     }
 
     /// Returns the sender for a callback fn to be put into a thread/event
@@ -165,99 +162,3 @@ impl_put_back_tuple!(A);
 impl_put_back_tuple!(A, B);
 impl_put_back_tuple!(A, B, C);
 impl_put_back_tuple!(A, B, C, D);
-
-#[derive(Debug)]
-pub enum StateError {
-    NotFound(&'static str),
-    ConflictingAccess(&'static str),
-}
-
-impl fmt::Display for StateError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StateError::NotFound(name) => write!(f, "type `{name}` not registered in state"),
-            StateError::ConflictingAccess(name) => {
-                write!(
-                    f,
-                    "type `{name}` requested more than once in the same access"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for StateError {}
-
-trait StateGet<'a>: Sized {
-    fn type_id() -> TypeId;
-    fn get(slot: &'a mut Box<dyn Any>) -> Self;
-}
-
-impl<'a, T: Any + 'static> StateGet<'a> for &'a T {
-    fn type_id() -> TypeId {
-        TypeId::of::<T>()
-    }
-
-    fn get(slot: &'a mut Box<dyn Any>) -> Self {
-        slot.downcast_ref::<T>()
-            .expect("slot was fetched by this exact TypeId")
-    }
-}
-
-impl<'a, T: Any + 'static> StateGet<'a> for &'a mut T {
-    fn type_id() -> TypeId {
-        TypeId::of::<T>()
-    }
-
-    fn get(slot: &'a mut Box<dyn Any>) -> Self {
-        slot.downcast_mut::<T>()
-            .expect("slot was fetched by this exact TypeId")
-    }
-}
-
-pub trait GetManyAny<'a>: Sized {
-    fn get_many_any(inner: &'a mut HashMap<TypeId, Box<dyn Any>>) -> Result<Self, StateError>;
-}
-
-impl<'a, T: StateGet<'a>> GetManyAny<'a> for T {
-    fn get_many_any(inner: &'a mut HashMap<TypeId, Box<dyn Any>>) -> Result<Self, StateError> {
-        let id = T::type_id();
-        inner
-            .get_mut(&id)
-            .map(T::get)
-            .ok_or(StateError::NotFound(std::any::type_name::<T>()))
-    }
-}
-
-macro_rules! impl_get_many_any_tuple {
-    ($($T:ident : $idx:tt),+) => {
-        impl<'a, $($T: StateGet<'a>),+> GetManyAny<'a> for ($($T,)+) {
-            #[allow(non_snake_case)]
-            fn get_many_any(
-                inner: &'a mut HashMap<TypeId, Box<dyn Any>>,
-            ) -> Result<Self, StateError> {
-                let ids = [$(($T::type_id(), std::any::type_name::<$T>())),+];
-                for i in 0..ids.len() {
-                    for j in (i + 1)..ids.len() {
-                        if ids[i].0 == ids[j].0 {
-                            return Err(StateError::ConflictingAccess(ids[i].1));
-                        }
-                    }
-                }
-                let [$($T,)+] = inner.get_disjoint_mut([$(&ids[$idx].0),+]);
-                Ok(($(
-                    $T.map(<$T as StateGet<'a>>::get)
-                        .ok_or(StateError::NotFound(std::any::type_name::<$T>()))?,
-                )+))
-            }
-        }
-    };
-}
-
-impl_get_many_any_tuple!(A:0, B:1);
-impl_get_many_any_tuple!(A:0, B:1, C:2);
-impl_get_many_any_tuple!(A:0, B:1, C:2, D:3);
-impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4);
-impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4, F:5);
-impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4, F:5, G:6);
-impl_get_many_any_tuple!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7);

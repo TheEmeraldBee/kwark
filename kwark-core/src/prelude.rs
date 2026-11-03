@@ -20,6 +20,7 @@ pub use kwark_input::{Chord, Code, Step};
 
 pub use kwark_buffer as buffer;
 pub use kwark_render as render;
+pub use kwark_resources::Resources;
 pub use kwark_text as text;
 pub use kwark_theme::Theme;
 

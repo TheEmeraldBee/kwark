@@ -4,7 +4,6 @@ use kwark_text::Cursor;
 use kwark_tree_sitter::tree::SyntaxTree;
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
-use ratatui::widgets::{Clear, Widget};
 use ropey::Rope;
 
 use crate::{Border, ElementGrid, Gutters, Highlight, Highlighters, LineCtx, Renderers, plain_col};
@@ -289,19 +288,6 @@ pub fn split_vertically(area: Rect, top: u16, bottom: u16) -> (Rect, Rect, Rect)
     (top_rect, middle_rect, bottom_rect)
 }
 
-/// Arguments for rendering a single window's
-pub struct WindowRenderArgs<'a, S, C> {
-    pub rope: &'a Rope,
-    pub state: &'a mut S,
-    pub scroll_top: usize,
-    pub cursors: &'a [Cursor],
-    pub primary: usize,
-    pub tree: Option<&'a SyntaxTree>,
-    pub area: Rect,
-    pub buf: &'a mut Buffer,
-    pub ctx: &'a C,
-}
-
 /// A pipeline to run when rendering a window
 pub struct WindowPipeline<S, C> {
     pub border: Option<Box<dyn Border<S, C>>>,
@@ -330,54 +316,6 @@ impl<S, C> WindowPipeline<S, C> {
     pub fn remove_border(&mut self) -> &mut Self {
         self.border = None;
         self
-    }
-
-    /// Draws the window's elements
-    pub fn render(
-        &mut self,
-        content: &mut Pipeline<S>,
-        WindowRenderArgs {
-            rope,
-            state,
-            scroll_top,
-            cursors,
-            primary,
-            tree,
-            area,
-            buf,
-            ctx,
-        }: WindowRenderArgs<S, C>,
-    ) -> Viewport {
-        let inner = match &mut self.border {
-            Some(border) => {
-                let inner = border.render(state, ctx, area, buf);
-                // The border may have styled the whole `area`; clear its own
-                // styling back out of `inner` before anything draws there
-                Clear.render(inner, buf);
-                inner
-            }
-            None => area,
-        };
-
-        let top_h = self.top.height(state, ctx, inner.height);
-        let bottom_h = self
-            .bottom
-            .height(state, ctx, inner.height.saturating_sub(top_h));
-        let (top_rect, content_rect, bottom_rect) = split_vertically(inner, top_h, bottom_h);
-
-        self.top.render(state, ctx, top_rect, buf);
-        self.bottom.render(state, ctx, bottom_rect, buf);
-
-        content.render(RenderArgs {
-            rope,
-            state,
-            scroll_top,
-            cursors,
-            primary,
-            tree,
-            area: content_rect,
-            buf,
-        })
     }
 }
 

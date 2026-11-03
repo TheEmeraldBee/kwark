@@ -669,6 +669,7 @@ version = "0.0.0"
 dependencies = [
  "kwark-bus",
  "kwark-render",
+ "kwark-resources",
  "kwark-text",
  "kwark-tree-sitter",
  "ratatui",
@@ -694,6 +695,7 @@ dependencies = [
  "kwark-bus",
  "kwark-input",
  "kwark-render",
+ "kwark-resources",
  "kwark-text",
  "kwark-theme",
  "kwark-tree-sitter",
@@ -762,6 +764,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kwark-resources"
+version = "0.0.0"
+
+[[package]]
 name = "kwark-text"
 version = "0.0.0"
 dependencies = [
@@ -811,6 +817,7 @@ dependencies = [
  "kwark-bus",
  "kwark-core",
  "kwark-render",
+ "kwark-resources",
  "ratatui",
 ]
 

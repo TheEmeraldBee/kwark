@@ -405,11 +405,9 @@ impl WindowLayout {
         let text_rect = window.content_rect()?;
 
         let id = window.selected()?;
-        let scroll = window.state().map(|v| v.scroll).unwrap_or(0);
-
         let pos = storage
             .get(&id)?
-            .hit_test(pipeline, state, text_rect, scroll, point)?;
+            .hit_test(pipeline, state, text_rect, window.scroll_shown(), point)?;
         Some((leaf, id, pos))
     }
 
@@ -496,5 +494,36 @@ mod test {
         );
 
         assert_eq!(cell, None);
+    }
+
+    #[test]
+    pub fn scroll_is_kept_per_window() {
+        let (bus, _rx) = kwark_bus::channel();
+        let mut storage = buffer::Storage::new(bus.clone());
+        let mut layout = WindowLayout::new(bus);
+
+        let id = storage.insert(kwark_core::prelude::text::BufferEntry::new_scratch("a"));
+        let first = layout.active_id();
+        layout.active_mut().select(id.clone());
+
+        let second = layout.split(layout::Direction::Horizontal);
+        layout.active_mut().select(id);
+
+        layout.window_mut(first).unwrap().scroll_by(5, 10);
+        layout.window_mut(second).unwrap().scroll_by(20, 10);
+
+        assert_eq!(layout.window_mut(first).unwrap().scroll_shown(), 5);
+        assert_eq!(layout.window_mut(second).unwrap().scroll_shown(), 9);
+    }
+
+    #[test]
+    pub fn shown_scroll_overrides_the_target() {
+        let mut window = Window::new();
+        window.select(buffer::ID::Widget(0));
+
+        window.scroll_by(3, 10);
+        window.resources_mut().unwrap().get_or_default::<&mut crate::Scroll>().shown = Some(1);
+
+        assert_eq!(window.scroll_shown(), 1);
     }
 }
