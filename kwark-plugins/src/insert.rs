@@ -19,58 +19,14 @@ impl<S: 'static> kwark_core::Plugin<S> for Plugin {
         let registry = &mut editor.core.commands;
 
         registry.register("insert", |s, args| {
-            let text = args.str("text", 0, "");
-            if text.is_empty() {
-                return Ok(());
-            }
-
-            let opts = s.core.cursor;
-
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.insert(text, &opts);
-
-            Ok(())
+            insert(s, args.str("text", 0, ""), CursorOverrides::new())
         });
 
-        registry.register("delete", |s, args| {
-            let before = args.bool("before", 0, false);
-            let opts = s.core.cursor;
+        registry.register("delete", |s, args| delete(s, args.bool("before", 0, false)));
 
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
+        registry.register("undo", |s, _| undo(s));
 
-            if opts.extend {
-                buf.delete(&opts);
-            } else {
-                buf.delete_char(before, &opts);
-            }
-
-            Ok(())
-        });
-
-        registry.register("undo", |s, _| {
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.undo();
-
-            Ok(())
-        });
-
-        registry.register("redo", |s, _| {
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.redo();
-
-            Ok(())
-        });
+        registry.register("redo", |s, _| redo(s));
 
         Ok(())
     }
@@ -83,22 +39,64 @@ fn join_prefix<'a>(prefix: &'a [&'a str], bind: &'a &'a str) -> Vec<&'a &'a str>
         .collect::<Vec<_>>()
 }
 
-/// Creates an insertion function for use in [`InputTree::bind`]
-pub fn create_insertion<S: 'static>(
+/// Inserts `text` at the cursors
+pub fn insert<S: 'static>(
+    e: &mut Editor<S>,
     text: &str,
     overrides: CursorOverrides,
-) -> impl Fn(&mut Editor<S>) -> anyhow::Result<()> {
-    move |s: &mut Editor<S>| {
-        let opts = overrides.combine(s.core.cursor);
-
-        let Some(mut buf) = active_buffer(s) else {
-            return Ok(());
-        };
-
-        buf.insert(text, &opts);
-
-        Ok(())
+) -> anyhow::Result<()> {
+    if text.is_empty() {
+        return Ok(());
     }
+
+    let opts = overrides.combine(e.core.cursor);
+
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    buf.insert(text, &opts);
+
+    Ok(())
+}
+
+/// Deletes the selection, or the char before or after the cursors when not extending
+pub fn delete<S: 'static>(e: &mut Editor<S>, before: bool) -> anyhow::Result<()> {
+    let opts = e.core.cursor;
+
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    if opts.extend {
+        buf.delete(&opts);
+    } else {
+        buf.delete_char(before, &opts);
+    }
+
+    Ok(())
+}
+
+/// Undoes the last change in the active buffer
+pub fn undo<S: 'static>(e: &mut Editor<S>) -> anyhow::Result<()> {
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    buf.undo();
+
+    Ok(())
+}
+
+/// Redoes the last undone change in the active buffer
+pub fn redo<S: 'static>(e: &mut Editor<S>) -> anyhow::Result<()> {
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    buf.redo();
+
+    Ok(())
 }
 
 /// Binds all important insertion keys for use in a insertion-like system
@@ -112,19 +110,19 @@ pub fn bind_insert<'a, S: 'static>(
     tree.bind(
         &join_prefix(&prefix, &"space"),
         "Insert Space",
-        create_insertion(" ", overrides),
+        move |e: &mut Editor<S>| insert(e, " ", overrides),
     )?;
 
     tree.bind(
         &join_prefix(&prefix, &"enter"),
         "Insert Newline",
-        create_insertion("\n", overrides),
+        move |e: &mut Editor<S>| insert(e, "\n", overrides),
     )?;
 
     tree.bind(
         &join_prefix(&prefix, &"tab"),
         "Insert Tab",
-        create_insertion("\t", overrides),
+        move |e: &mut Editor<S>| insert(e, "\t", overrides),
     )?;
 
     tree.set_backup(

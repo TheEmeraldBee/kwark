@@ -225,14 +225,6 @@ impl<S: 'static> Editor<S> {
 }
 
 pub trait InputTreeExt<S: 'static> {
-    /// Binds a chord to a named command
-    fn bind_cmd(
-        &mut self,
-        keys: &[&str],
-        desc: impl Into<String>,
-        commands: impl IntoIterator<Item = impl Into<String>>,
-    ) -> anyhow::Result<()>;
-
     /// Begin a builder for a group under `key`
     ///
     /// Ignores desc if it's empty
@@ -245,23 +237,6 @@ pub trait InputTreeExt<S: 'static> {
 }
 
 impl<S: 'static> InputTreeExt<S> for InputTree<S> {
-    fn bind_cmd(
-        &mut self,
-        keys: &[&str],
-        desc: impl Into<String>,
-        commands: impl IntoIterator<Item = impl Into<String>>,
-    ) -> anyhow::Result<()> {
-        let commands = commands.into_iter().map(|x| x.into()).collect::<Vec<_>>();
-
-        self.bind(keys, desc, move |e: &mut Editor<S>| {
-            for command in commands.iter() {
-                e.execute(command)?;
-            }
-
-            Ok(())
-        })
-    }
-
     fn group(
         &mut self,
         keys: &[&str],
@@ -312,23 +287,6 @@ impl<'a, S: 'static> Group<'a, S> {
 }
 
 impl<'a, S: 'static> InputTreeExt<S> for Group<'a, S> {
-    fn bind_cmd(
-        &mut self,
-        keys: &[&str],
-        desc: impl Into<String>,
-        command: impl IntoIterator<Item = impl Into<String>>,
-    ) -> anyhow::Result<()> {
-        self.tree.bind_cmd(
-            self.keys(keys)
-                .iter()
-                .map(|x| x.as_str())
-                .collect::<Vec<_>>()
-                .as_slice(),
-            desc,
-            command,
-        )
-    }
-
     fn group(
         &mut self,
         key: &[&str],

@@ -1,23 +1,25 @@
+use std::str::FromStr;
+
 use kwark_core::prelude::*;
 
-use crate::{cursor_overrides::CursorOverrides, internal_utils::*};
+use crate::{cursor_overrides::CursorOverrides, dir::Dir, internal_utils::*};
 
-fn create_move<S: 'static>(
+/// Moves the cursor by the given lines and columns
+pub fn move_cursor<S: 'static>(
+    e: &mut Editor<S>,
     lines: isize,
     columns: isize,
-    options: CursorOverrides,
-) -> impl Fn(&mut Editor<S>) -> anyhow::Result<()> {
-    move |s: &mut Editor<S>| {
-        let opts = options.combine(s.core.cursor);
+    overrides: CursorOverrides,
+) -> anyhow::Result<()> {
+    let opts = overrides.combine(e.core.cursor);
 
-        let Some(mut buf) = active_buffer(s) else {
-            return Ok(());
-        };
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
 
-        buf.move_(lines, columns, &opts);
+    buf.move_(lines, columns, &opts);
 
-        Ok(())
-    }
+    Ok(())
 }
 
 #[derive(PartialEq, Eq)]
@@ -77,8 +79,27 @@ impl Motion {
     }
 }
 
-/// Returns the unit for `kind` repeated `count` times, for use with [`create_motion`]
-pub fn motion(kind: Motion, count: usize) -> impl Fn(usize, usize, &text::Rope) -> (usize, usize) {
+impl FromStr for Motion {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> anyhow::Result<Self> {
+        match s {
+            "word_start" | "w" => Ok(Motion::WordStart),
+            "big_word_start" | "W" => Ok(Motion::BigWordStart),
+            "word_end" | "e" => Ok(Motion::WordEnd),
+            "big_word_end" | "E" => Ok(Motion::BigWordEnd),
+            "word_back" | "b" => Ok(Motion::WordBack),
+            "big_word_back" | "B" => Ok(Motion::BigWordBack),
+            _ => Err(anyhow::anyhow!("unknown motion `{s}`")),
+        }
+    }
+}
+
+/// Returns the unit for `kind` repeated `count` times, for use with [`select_to`]
+pub fn motion_unit(
+    kind: Motion,
+    count: usize,
+) -> impl Fn(usize, usize, &text::Rope) -> (usize, usize) {
     move |anchor, caret, rope| {
         let len = rope.len_chars();
 
@@ -205,22 +226,83 @@ fn range_to_target(
     (anchor, head)
 }
 
-/// Returns a command that moves the cursor to the anchor and caret returned by `unit`
-pub fn create_motion<S: 'static>(
+/// Selects to the anchor and caret returned by `unit`
+pub fn select_to<S: 'static>(
+    e: &mut Editor<S>,
     unit: impl Fn(usize, usize, &text::Rope) -> (usize, usize),
-    options: CursorOverrides,
-) -> impl Fn(&mut Editor<S>) -> anyhow::Result<()> {
-    move |s: &mut Editor<S>| {
-        let opts = options.combine(s.core.cursor);
+    overrides: CursorOverrides,
+) -> anyhow::Result<()> {
+    let opts = overrides.combine(e.core.cursor);
 
-        let Some(mut buf) = active_buffer(s) else {
-            return Ok(());
-        };
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
 
-        buf.select_to(&opts, &unit);
+    buf.select_to(&opts, &unit);
 
-        Ok(())
-    }
+    Ok(())
+}
+
+/// Selects to the end of `kind` repeated `count` times
+pub fn motion<S: 'static>(
+    e: &mut Editor<S>,
+    kind: Motion,
+    count: usize,
+    overrides: CursorOverrides,
+) -> anyhow::Result<()> {
+    select_to(e, motion_unit(kind, count), overrides)
+}
+
+/// Moves the cursor to the given line and column, leaving `None` targets unchanged
+pub fn goto<S: 'static>(
+    e: &mut Editor<S>,
+    line: Option<text::Target>,
+    col: Option<text::Target>,
+    overrides: CursorOverrides,
+) -> anyhow::Result<()> {
+    let opts = overrides.combine(e.core.cursor);
+
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    buf.goto(line, col, &opts);
+
+    Ok(())
+}
+
+/// Moves the primary cursor by `dist` cursors
+pub fn change_cursor<S: 'static>(e: &mut Editor<S>, dist: isize) -> anyhow::Result<()> {
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    buf.change_primary(dist);
+
+    Ok(())
+}
+
+/// Toggles whether actions apply to all cursors
+pub fn toggle_all_cursors<S: 'static>(e: &mut Editor<S>) -> anyhow::Result<()> {
+    let options = &mut e.core.cursor;
+    options.all = !options.all;
+    Ok(())
+}
+
+/// Clears the selection of the cursors
+pub fn clear_selection<S: 'static>(
+    e: &mut Editor<S>,
+    overrides: CursorOverrides,
+) -> anyhow::Result<()> {
+    let opts = overrides.combine(e.core.cursor);
+
+    let Some(mut buf) = active_buffer(e) else {
+        return Ok(());
+    };
+
+    buf.clear_selection(&opts);
+
+    Ok(())
 }
 
 /// Returns the line or column target named `name`, or `None` if it is missing
@@ -256,113 +338,53 @@ impl<S: 'static> kwark_core::Plugin<S> for Plugin {
         let registry = &mut editor.core.commands;
 
         registry.register("move", |s, args| {
-            let dir = args.str("dir", 0, "right");
-            let count = args.int("count", 1, 1);
-            let extend = args.bool("extend", 2, false);
-            let wrap = args.bool("wrap", 3, false);
-            let all = args.bool("all", 4, false);
+            let dir: Dir = args.str("dir", 0, "right").parse()?;
+            let count = args.int("count", 1, 1) as isize;
+            let overrides = CursorOverrides::new()
+                .extend(args.bool("extend", 2, false))
+                .wrap(args.bool("wrap", 3, false))
+                .all(args.bool("all", 4, false));
 
-            let (lines, cols) = match dir {
-                "left" | "h" => (0, -1),
-                "right" | "l" => (0, 1),
-                "up" | "k" => (-1, 0),
-                "down" | "j" => (1, 0),
-                _ => return Err(anyhow::anyhow!("unknown move direction `{dir}`")),
-            };
-
-            let overrides = CursorOverrides::new().extend(extend).wrap(wrap).all(all);
-            let opts = overrides.combine(s.core.cursor);
-
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.move_(lines * count as isize, cols * count as isize, &opts);
-
-            Ok(())
+            let (lines, cols) = dir.offset();
+            move_cursor(s, lines * count, cols * count, overrides)
         });
 
         registry.register("motion", |s, args| {
-            let kind = args.str("kind", 0, "w");
-            let count = args.int("count", 1, 1);
-            let extend = args.bool("extend", 2, false);
-            let wrap = args.bool("wrap", 3, true);
-            let all = args.bool("all", 4, false);
+            let kind: Motion = args.str("kind", 0, "w").parse()?;
+            let count = args.int("count", 1, 1).max(1) as usize;
+            let overrides = CursorOverrides::new()
+                .extend(args.bool("extend", 2, false))
+                .wrap(args.bool("wrap", 3, true))
+                .all(args.bool("all", 4, false));
 
-            let kind = match kind {
-                "word_start" | "w" => Motion::WordStart,
-                "big_word_start" | "W" => Motion::BigWordStart,
-                "word_end" | "e" => Motion::WordEnd,
-                "big_word_end" | "E" => Motion::BigWordEnd,
-                "word_back" | "b" => Motion::WordBack,
-                "big_word_back" | "B" => Motion::BigWordBack,
-                _ => return Err(anyhow::anyhow!("unknown motion `{kind}`")),
-            };
-
-            let overrides = CursorOverrides::new().extend(extend).wrap(wrap).all(all);
-            let opts = overrides.combine(s.core.cursor);
-
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.select_to(&opts, motion(kind, count.max(1) as usize));
-
-            Ok(())
+            motion(s, kind, count, overrides)
         });
 
         registry.register("change_cursor", |s, args| {
-            let dist = args.int("dist", 0, 1);
-
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.change_primary(dist as isize);
-
-            Ok(())
+            change_cursor(s, args.int("dist", 0, 1) as isize)
         });
 
-        registry.register("toggle_all_cursors", |s, _| {
-            let options = &mut s.core.cursor;
-            options.all = !options.all;
-            Ok(())
-        });
+        registry.register("toggle_all_cursors", |s, _| toggle_all_cursors(s));
 
         registry.register("clear_selection", |s, args| {
             let overrides = CursorOverrides {
                 all: args.get("all", 0).and_then(ArgValue::as_bool),
                 ..CursorOverrides::new()
             };
-            let opts = overrides.combine(s.core.cursor);
 
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.clear_selection(&opts);
-
-            Ok(())
+            clear_selection(s, overrides)
         });
 
         registry.register("set", |s, args| {
             let line = target_arg(args, "line", 0)?;
             let col = target_arg(args, "col", 1)?;
-
             let overrides = CursorOverrides {
                 extend: args.get("extend", 2).and_then(ArgValue::as_bool),
                 all: args.get("all", 3).and_then(ArgValue::as_bool),
                 ..CursorOverrides::new()
             };
-            let opts = overrides.combine(s.core.cursor);
 
-            let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
-            };
-
-            buf.goto(line, col, &opts);
-
-            Ok(())
+            goto(s, line, col, overrides)
         });
 
         Ok(())
@@ -466,7 +488,7 @@ pub fn bind<S: 'static>(
             true => "Move cursor left",
             false => "",
         },
-        create_move(0, -1, overrides),
+        move |e: &mut Editor<S>| move_cursor(e, 0, -1, overrides),
     )?;
     tree.bind(
         &right_bind,
@@ -474,7 +496,7 @@ pub fn bind<S: 'static>(
             true => "Move cursor right",
             false => "",
         },
-        create_move(0, 1, overrides),
+        move |e: &mut Editor<S>| move_cursor(e, 0, 1, overrides),
     )?;
     tree.bind(
         &up_bind,
@@ -482,7 +504,7 @@ pub fn bind<S: 'static>(
             true => "Move cursor up",
             false => "",
         },
-        create_move(-1, 0, overrides),
+        move |e: &mut Editor<S>| move_cursor(e, -1, 0, overrides),
     )?;
     tree.bind(
         &down_bind,
@@ -490,7 +512,7 @@ pub fn bind<S: 'static>(
             true => "Move cursor down",
             false => "",
         },
-        create_move(1, 0, overrides),
+        move |e: &mut Editor<S>| move_cursor(e, 1, 0, overrides),
     )?;
 
     Ok(())
@@ -502,7 +524,7 @@ mod test {
 
     fn stops(kind: Motion, src: &str, start: (usize, usize)) -> Vec<(usize, usize)> {
         let rope = text::Rope::from_str(src);
-        let unit = motion(kind, 1);
+        let unit = motion_unit(kind, 1);
         let mut out = vec![];
         let mut range = start;
 
@@ -553,7 +575,7 @@ mod test {
     #[test]
     fn word_start_repeats_count() {
         let rope = text::Rope::from_str("foo bar baz");
-        assert_eq!(motion(Motion::WordStart, 2)(0, 0, &rope), (4, 7));
+        assert_eq!(motion_unit(Motion::WordStart, 2)(0, 0, &rope), (4, 7));
     }
 
     #[test]

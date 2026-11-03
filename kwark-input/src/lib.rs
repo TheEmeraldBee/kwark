@@ -356,6 +356,37 @@ impl<S: 'static> InputTree<S> {
         }
     }
 
+    /// Removes the binding at the key path, along with any bindings under it
+    pub fn unbind(&mut self, keys: &[impl AsRef<str>]) -> Result<(), ParseError> {
+        let chords = keys
+            .iter()
+            .map(|x| parse_chord(x.as_ref()))
+            .collect::<Result<Vec<_>, ParseError>>()?;
+
+        self.unregister(&chords);
+
+        Ok(())
+    }
+
+    /// Removes the binding at the chord path, along with any bindings under it
+    pub fn unregister(&mut self, chords: &[Chord]) {
+        let Some((last, rest)) = chords.split_last() else {
+            return;
+        };
+
+        let mut children = &mut self.root;
+        for chord in rest {
+            let Some(InputNode::Node { children: next, .. }) =
+                children.iter_mut().find(|x| x.is_chord(chord))
+            else {
+                return;
+            };
+            children = next;
+        }
+
+        children.retain(|x| !x.is_chord(last));
+    }
+
     pub fn desc(
         &mut self,
         keys: &[impl AsRef<str>],
@@ -493,5 +524,37 @@ mod test {
             (event.from.as_str(), event.to.as_str()),
             ("normal", "insert")
         );
+    }
+
+    #[test]
+    pub fn unregister_removes_binding() {
+        let mut tree = InputTree::<()>::new();
+        tree.bind(&["g", "g"], "top", |_| Ok(())).unwrap();
+        tree.bind(&["g", "e"], "end", |_| Ok(())).unwrap();
+
+        let g = parse_chord("g").unwrap();
+        let e = parse_chord("e").unwrap();
+        tree.unregister(&[g, g]);
+
+        assert!(tree.find(&[g, g]).is_none());
+        assert!(tree.find(&[g, e]).is_some());
+
+        // Missing paths are a no-op
+        tree.unregister(&[e, e, e]);
+        tree.unregister(&[]);
+    }
+
+    #[test]
+    pub fn unbind_removes_binding() {
+        let mut tree = InputTree::<()>::new();
+        tree.bind(&["ctrl-x", "s"], "save", |_| Ok(())).unwrap();
+
+        tree.unbind(&["ctrl-x", "s"]).unwrap();
+        assert!(
+            tree.find(&[parse_chord("ctrl-x").unwrap(), parse_chord("s").unwrap()])
+                .is_none()
+        );
+
+        assert!(tree.unbind(&["notakey-x"]).is_err());
     }
 }

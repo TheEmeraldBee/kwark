@@ -2,6 +2,9 @@ mod internal_utils;
 
 pub mod cursor_overrides;
 
+/// A direction shared by movement and window actions
+pub mod dir;
+
 /// A fully built out system for creating fast binds for handling fast, efficient cursor movement
 pub mod movement;
 
