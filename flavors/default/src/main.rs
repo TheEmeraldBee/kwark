@@ -83,7 +83,10 @@ fn create_scroll(delta: isize) -> impl Fn(&mut State) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     let mut editor = kwark::init();
 
-    editor.insert(LanguageStore::new("./queries".into())?);
+    // Insert a language store with the path to the queries directory
+    editor.insert(LanguageStore::new(
+        format!("{}/queries", env!("CARGO_MANIFEST_DIR")).into(),
+    )?);
 
     plugins::visual::init(&mut editor);
 
