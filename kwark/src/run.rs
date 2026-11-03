@@ -19,6 +19,7 @@ use kwark_core::{
     timers::Timers,
 };
 use kwark_theme::Theme;
+use kwark_tree_sitter::store::LanguageStore;
 use kwark_window::{WindowLayout, WindowPipeline};
 
 use crate::{syntax, terminal};
@@ -50,6 +51,7 @@ pub fn init() -> Editor {
     editor.state.insert(Timers::default());
     editor.state.insert(Tasks::default());
     editor.state.insert(SuspendQueue::default());
+    editor.state.insert(LanguageStore::default());
 
     syntax::register(&mut editor);
 
