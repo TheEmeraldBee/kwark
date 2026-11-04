@@ -8,6 +8,7 @@ license.workspace = true
 kwark-bus.workspace = true
 kwark-buffer.workspace = true
 kwark-core.workspace = true
+kwark-macros.workspace = true
 kwark-plugins.workspace = true
 kwark-theme.workspace = true
 kwark-tree-sitter.workspace = true

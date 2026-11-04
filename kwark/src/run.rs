@@ -296,20 +296,25 @@ mod test {
     use super::*;
     use crate::plugins;
 
-    crate::state! {
-        struct Empty {}
-    }
+    #[crate::state]
+    struct Empty {}
 
-    crate::state! {
-        struct Full {
-            visual: plugins::visual::Plugin,
-            editor_commands: plugins::editor_commands::Plugin,
-            movement: plugins::movement::Plugin,
-            insert: plugins::insert::Plugin,
-            window: plugins::window::Plugin,
-            command_line: plugins::command_line::Plugin,
-            smooth_scroll: plugins::smooth_scroll::Plugin = plugins::smooth_scroll::Plugin::new(40.0),
-        }
+    #[crate::state]
+    struct Full {
+        #[plugin]
+        visual: plugins::visual::Plugin,
+        #[plugin]
+        editor_commands: plugins::editor_commands::Plugin,
+        #[plugin]
+        movement: plugins::movement::Plugin,
+        #[plugin]
+        insert: plugins::insert::Plugin,
+        #[plugin]
+        window: plugins::window::Plugin,
+        #[plugin]
+        command_line: plugins::command_line::Plugin,
+        #[plugin(plugins::smooth_scroll::Plugin::new(40.0))]
+        smooth_scroll: plugins::smooth_scroll::Plugin,
     }
 
     /// Runs every queued bus event and callback
@@ -327,7 +332,7 @@ mod test {
 
     #[test]
     pub fn handlers_see_events_from_other_handlers() {
-        let mut editor = Empty::editor().unwrap();
+        let mut editor = crate::init::<Empty>().unwrap();
         let log = Rc::new(RefCell::new(vec![]));
 
         let opened = log.clone();
@@ -353,7 +358,7 @@ mod test {
 
     #[test]
     pub fn every_plugin_boots_and_runs_commands() {
-        let mut editor = Full::editor().unwrap();
+        let mut editor = crate::init::<Full>().unwrap();
 
         let id = editor.core.buffers.insert(BufferEntry::new_scratch("a"));
         editor.core.windows.active_mut().select(id);
@@ -378,7 +383,7 @@ mod test {
 
     #[test]
     pub fn smooth_scroll_drops_closed_windows() {
-        let mut editor = Full::editor().unwrap();
+        let mut editor = crate::init::<Full>().unwrap();
 
         let id = editor.core.buffers.insert(BufferEntry::new_scratch("a"));
         editor.core.windows.active_mut().select(id);

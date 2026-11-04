@@ -25,17 +25,22 @@ use ratatui::{
 
 mod theme;
 
-kwark::state! {
-    /// The state of the default flavor
-    pub struct DefaultState {
-        visual: plugins::visual::Plugin,
-        editor_commands: plugins::editor_commands::Plugin,
-        movement: plugins::movement::Plugin,
-        insert: plugins::insert::Plugin,
-        window: plugins::window::Plugin,
-        command_line: plugins::command_line::Plugin,
-        smooth_scroll: plugins::smooth_scroll::Plugin = plugins::smooth_scroll::Plugin::new(40.0),
-    }
+#[kwark::state]
+pub struct DefaultState {
+    #[plugin]
+    visual: plugins::visual::Plugin,
+    #[plugin]
+    editor_commands: plugins::editor_commands::Plugin,
+    #[plugin]
+    movement: plugins::movement::Plugin,
+    #[plugin]
+    insert: plugins::insert::Plugin,
+    #[plugin]
+    window: plugins::window::Plugin,
+    #[plugin]
+    command_line: plugins::command_line::Plugin,
+    #[plugin(plugins::smooth_scroll::Plugin::new(40.0))]
+    smooth_scroll: plugins::smooth_scroll::Plugin,
 }
 
 type Editor = kwark::Editor<DefaultState>;
@@ -111,7 +116,7 @@ fn create_motion(kind: Motion, extend: bool) -> impl Fn(&mut Editor) -> anyhow::
 }
 
 fn main() -> anyhow::Result<()> {
-    let mut editor = DefaultState::editor()?;
+    let mut editor = kwark::init::<DefaultState>()?;
 
     // Language store with the path to the queries directory
     editor.core.languages =
@@ -234,7 +239,6 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        // alt-h is one chord, not a sequence, so it stays flat rather than nested
         normal.bind(&["alt-h"], "Focus window left", |e| {
             window::focus(e, Dir::Left)
         })?;

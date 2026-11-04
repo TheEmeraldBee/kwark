@@ -30,9 +30,7 @@ pub trait Plugin<S: 'static>: PluginState {
 ///     }
 /// }
 ///
-/// kwark_core::state! {
-///     struct Empty {}
-/// }
+/// struct Empty;
 ///
 /// fn count(e: &mut Editor<Empty>) -> usize {
 ///     *e.plugin::<Counter>()
@@ -41,7 +39,7 @@ pub trait Plugin<S: 'static>: PluginState {
 #[diagnostic::on_unimplemented(
     message = "the plugin `{P}` is not in `{Self}`",
     label = "this editor state lacks the plugin `{P}`",
-    note = "add `{P}` to the `kwark::state!` block that defines `{Self}`"
+    note = "add a `#[plugin]` field of type `{P}` to `{Self}`"
 )]
 pub trait Has<P: PluginState> {
     fn plugin(&self) -> &P::State;
@@ -74,70 +72,13 @@ impl<S: 'static> Editor<S> {
     }
 }
 
-/// Defines the state of an editor from a list of plugins
-///
-/// ```
-/// kwark_core::state! {
-///     pub struct MinimalState {}
-/// }
-///
-/// let editor = MinimalState::editor().unwrap();
-/// assert!(editor.core.running.0);
-/// ```
-#[macro_export]
-macro_rules! state {
-    (
-        $(#[$meta:meta])*
-        $vis:vis struct $name:ident {
-            $($field:ident : $plugin:ty $(= $init:expr)?),* $(,)?
-        }
-    ) => {
-        $(#[$meta])*
-        $vis struct $name {
-            $(pub $field: <$plugin as $crate::PluginState>::State,)*
-        }
-
-        $(
-            impl $crate::Has<$plugin> for $name {
-                fn plugin(&self) -> &<$plugin as $crate::PluginState>::State {
-                    &self.$field
-                }
-
-                fn plugin_mut(&mut self) -> &mut <$plugin as $crate::PluginState>::State {
-                    &mut self.$field
-                }
-            }
-        )*
-
-        impl $name {
-            /// Returns an editor with every plugin of this state registered
-            #[allow(unused_variables)]
-            pub fn editor() -> $crate::anyhow::Result<$crate::Editor<Self>> {
-                $(let $field: $plugin = $crate::__plugin!($plugin $(= $init)?);)*
-
-                $crate::Editor::build(
-                    |senders| {
-                        Ok(Self {
-                            $($field: $crate::PluginState::init(&$field, senders)?,)*
-                        })
-                    },
-                    |editor| {
-                        $($crate::Plugin::<Self>::register(&$field, editor)?;)*
-                        Ok(())
-                    },
-                )
-            }
-        }
-    };
+/// An editor state built from plugins and fields
+pub trait State: Sized + 'static {
+    /// Returns an editor with every plugin of this state registered
+    fn editor() -> anyhow::Result<Editor<Self>>;
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __plugin {
-    ($plugin:ty) => {
-        <$plugin as ::core::default::Default>::default()
-    };
-    ($plugin:ty = $init:expr) => {
-        $init
-    };
+/// Returns an editor with every plugin of the state `S` registered
+pub fn init<S: State>() -> anyhow::Result<Editor<S>> {
+    S::editor()
 }

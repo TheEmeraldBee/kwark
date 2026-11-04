@@ -1,11 +1,10 @@
 // The state of this editor, with no plugins
-kwark::state! {
-    pub struct MinimalState {}
-}
+#[kwark::state]
+pub struct MinimalState {}
 
 fn main() -> anyhow::Result<()> {
     // Build the editor and register every plugin in the state
-    let mut editor = MinimalState::editor()?;
+    let mut editor = kwark::init::<MinimalState>()?;
 
     // The "normal" mode is the mode the editor starts in
     let normal = editor.core.input.tree("normal");
