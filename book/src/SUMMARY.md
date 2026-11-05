@@ -1,9 +1,8 @@
 # Summary
 
-[Introduction](introduction.md)
-
-# User Guide
-
-- [Installation](installation.md)
-- [Getting Started](getting-started.md)
+- [Introduction](introduction.md)
 - [Flavors](flavors.md)
+- [Installation](installation.md)
+- [Sample Configurations](sample-configurations.md)
+- [Plugins](plugins.md)
+- [State](state.md)

@@ -49,7 +49,7 @@ impl SmoothScroll {
 impl PluginState for Plugin {
     type State = HashMap<(LeafId, buffer::ID), SmoothScroll>;
 
-    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<Self::State> {
+    fn init(&self) -> anyhow::Result<Self::State> {
         Ok(HashMap::new())
     }
 }

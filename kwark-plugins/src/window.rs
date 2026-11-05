@@ -11,7 +11,7 @@ pub struct Plugin;
 impl PluginState for Plugin {
     type State = ();
 
-    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<()> {
+    fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }

@@ -1,11 +1,11 @@
-use crate::{Core, Editor, Senders};
+use crate::{Core, Editor};
 
 /// A plugin and the state it adds to the editor
 pub trait PluginState: Sized + 'static {
     type State: 'static;
 
     /// Returns the initial state of the plugin
-    fn init<S: 'static>(&self, senders: &Senders<S>) -> anyhow::Result<Self::State>;
+    fn init(&self) -> anyhow::Result<Self::State>;
 }
 
 /// A plugin that registers itself into an editor with state `S`

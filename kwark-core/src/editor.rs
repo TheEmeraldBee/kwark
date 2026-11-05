@@ -101,6 +101,11 @@ impl<S: 'static> Core<S> {
             frame: FrameInfo::default(),
         }
     }
+
+    pub fn active_buffer(&mut self) -> Option<&mut kwark_buffer::Buffer> {
+        let id = self.windows.active().selected()?;
+        self.buffers.get_mut(&id)
+    }
 }
 
 /// The senders that reach the main loop
@@ -121,7 +126,7 @@ struct Io<S: 'static> {
 impl<S: 'static> Editor<S> {
     /// Returns an editor with the state from `state`, after `register` runs on it
     pub fn build(
-        state: impl FnOnce(&Senders<S>) -> anyhow::Result<S>,
+        state: impl FnOnce() -> anyhow::Result<S>,
         register: impl FnOnce(&mut Self) -> anyhow::Result<()>,
     ) -> anyhow::Result<Self> {
         let (tx, callback_rx) = mpsc::unbounded_channel();
@@ -138,7 +143,7 @@ impl<S: 'static> Editor<S> {
 
         let mut editor = Self {
             core: Core::new(bus),
-            state: state(&senders)?,
+            state: state()?,
             events: EventStorage::default(),
 
             io: Io {

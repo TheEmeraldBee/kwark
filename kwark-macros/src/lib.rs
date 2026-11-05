@@ -92,7 +92,6 @@ fn expand(mut item: ItemStruct) -> syn::Result<TokenStream2> {
         })
     });
 
-    let senders = Ident::new("__kwark_senders", Span::mixed_site());
     let editor = Ident::new("__kwark_editor", Span::mixed_site());
 
     let mut plugins = vec![];
@@ -111,7 +110,7 @@ fn expand(mut item: ItemStruct) -> syn::Result<TokenStream2> {
                 };
 
                 plugins.push(quote!(let #var: #ty = #init;));
-                values.push(quote!(#ident: ::kwark::PluginState::init(&#var, #senders)?,));
+                values.push(quote!(#ident: ::kwark::PluginState::init(&#var)?,));
                 registers.push(quote!(::kwark::Plugin::<Self>::register(&#var, #editor)?;));
             }
             Kind::Value(init) => {
@@ -135,7 +134,7 @@ fn expand(mut item: ItemStruct) -> syn::Result<TokenStream2> {
                 #(#plugins)*
 
                 ::kwark::Editor::build(
-                    |#senders| {
+                    || {
                         ::core::result::Result::Ok(Self {
                             #(#values)*
                         })
@@ -207,6 +206,9 @@ fn optional_expr(attr: &Attribute) -> syn::Result<Option<Expr>> {
 fn required_expr(attr: &Attribute) -> syn::Result<Expr> {
     match &attr.meta {
         Meta::List(_) => attr.parse_args(),
-        _ => Err(syn::Error::new_spanned(attr, "expected `#[default(value)]`")),
+        _ => Err(syn::Error::new_spanned(
+            attr,
+            "expected `#[default(value)]`",
+        )),
     }
 }

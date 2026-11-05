@@ -132,7 +132,7 @@ pub struct Plugin;
 impl PluginState for Plugin {
     type State = MouseState;
 
-    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<MouseState> {
+    fn init(&self) -> anyhow::Result<MouseState> {
         Ok(MouseState::default())
     }
 }

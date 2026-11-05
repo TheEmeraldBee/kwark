@@ -2,9 +2,7 @@ use std::path::PathBuf;
 
 use kwark_buffer::Buffer;
 
-use kwark_core::{
-    Editor, PluginState, Senders, commands::Args, frame::FRAME_COUNT_FLAG, log::Severity,
-};
+use kwark_core::{Editor, PluginState, commands::Args, frame::FRAME_COUNT_FLAG, log::Severity};
 
 use crate::internal_utils::active_buffer_normal;
 
@@ -15,7 +13,7 @@ pub struct Plugin;
 impl PluginState for Plugin {
     type State = ();
 
-    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<()> {
+    fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }

@@ -4,7 +4,7 @@ pub use status_line::*;
 use crossterm::event::{KeyCode, KeyModifiers};
 use kwark_input::Code;
 
-use kwark_core::{Editor, Has, PluginState, Senders};
+use kwark_core::{Editor, Has, PluginState};
 
 /// The state that handles how a command is inputted
 #[derive(Default)]
@@ -149,7 +149,7 @@ pub fn command_mode<S: Has<Plugin> + 'static>(e: &mut Editor<S>) {
 impl PluginState for Plugin {
     type State = CommandLineState;
 
-    fn init<S: 'static>(&self, _: &Senders<S>) -> anyhow::Result<CommandLineState> {
+    fn init(&self) -> anyhow::Result<CommandLineState> {
         Ok(CommandLineState::default())
     }
 }
