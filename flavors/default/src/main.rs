@@ -474,7 +474,9 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        insert.bind(&["backspace"], "Delete Char", |e| insert::delete(e, true))?;
+        insert.bind(&["backspace"], "Delete Char", |e| {
+            insert::delete(e, true, CursorOverrides::new().extend(true))
+        })?;
 
         plugins::insert::bind_insert(insert, Vec::<&str>::new(), CursorOverrides::new())?;
     }

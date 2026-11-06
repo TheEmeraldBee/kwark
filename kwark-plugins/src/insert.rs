@@ -22,7 +22,9 @@ impl<S: 'static> kwark_core::Plugin<S> for Plugin {
             insert(s, args.str("text", 0, ""), CursorOverrides::new())
         });
 
-        registry.register("delete", |s, args| delete(s, args.bool("before", 0, false)));
+        registry.register("delete", |s, args| {
+            delete(s, args.bool("before", 0, false), CursorOverrides::new())
+        });
 
         registry.register("undo", |s, _| undo(s));
 
@@ -61,18 +63,18 @@ pub fn insert<S: 'static>(
 }
 
 /// Deletes the selection, or the char before or after the cursors when not extending
-pub fn delete<S: 'static>(e: &mut Editor<S>, before: bool) -> anyhow::Result<()> {
-    let opts = e.core.cursor;
+pub fn delete<S: 'static>(
+    e: &mut Editor<S>,
+    before: bool,
+    overrides: CursorOverrides,
+) -> anyhow::Result<()> {
+    let opts = overrides.combine(e.core.cursor);
 
     let Some(mut buf) = active_buffer(e) else {
         return Ok(());
     };
 
-    if opts.extend {
-        buf.delete(&opts);
-    } else {
-        buf.delete_char(before, &opts);
-    }
+    buf.delete_char(before, &opts);
 
     Ok(())
 }
@@ -130,12 +132,12 @@ pub fn bind_insert<'a, S: 'static>(
             let opts = s.core.cursor;
 
             let Some(mut buf) = active_buffer(s) else {
-                return Ok(());
+                return Ok(false);
             };
 
             // Don't handle anything other than shift
             if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
-                return Ok(());
+                return Ok(false);
             }
 
             let key_string = match chord.code {
@@ -143,12 +145,12 @@ pub fn bind_insert<'a, S: 'static>(
                     false => c.to_string(),
                     true => c.to_ascii_uppercase().to_string(),
                 },
-                _ => return Ok(()),
+                _ => return Ok(false),
             };
 
             buf.insert(key_string.as_str(), &opts);
 
-            Ok(())
+            Ok(true)
         },
         "Insert Pressed Key",
     );

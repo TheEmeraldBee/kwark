@@ -13,6 +13,6 @@ I would recommend using `cargo new kwark` in your `~/.config/` directory so that
 
 ## Project template
 Below is a very basic example project that just creates a binding that, on `ctrl-c` being pressed, the editor exits
-```rust,no_run
+```rust
 {{#include ../../kwark/examples/minimal.rs}}
 ```

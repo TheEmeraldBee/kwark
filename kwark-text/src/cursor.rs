@@ -491,6 +491,12 @@ impl CursorSet {
         self.apply_mut(options.all, buffer, |set, buf| {
             let idx = set.primary;
             let caret = set.cursors[idx].caret;
+            let tail = set.cursors[idx].anchor;
+
+            if caret != tail {
+                set.delete(buf, &options.all(false));
+                return;
+            }
 
             let start = match before {
                 true => caret.checked_sub(1),

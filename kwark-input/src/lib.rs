@@ -110,7 +110,7 @@ impl std::fmt::Display for Chord {
 }
 
 type Event<S> = Rc<dyn Fn(&mut S) -> anyhow::Result<()> + 'static>;
-type EventBackup<S> = Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<()> + 'static>;
+type EventBackup<S> = Rc<dyn Fn(&mut S, Chord) -> anyhow::Result<bool> + 'static>;
 
 #[derive(Clone)]
 pub enum InputNode<S: 'static> {
@@ -201,6 +201,8 @@ pub enum Step<S: 'static> {
     Failed,
     Step,
     Complete(Event<S>, Vec<Chord>),
+    /// A chord with no binding, passed to the tree's backup
+    Backup(EventBackup<S>, Chord),
 }
 
 pub struct InputTree<S: 'static> {
@@ -259,11 +261,10 @@ impl<S: 'static> InputTree<S> {
                 if self.current.len() == 1
                     && let Some(backup) = &self.backup
                 {
-                    let chords = std::mem::take(&mut self.current);
-                    let last = *chords.last().expect("Length checked to be 1");
                     let backup = backup.clone();
+                    self.current.clear();
 
-                    return Step::Complete(Rc::new(move |state| backup(state, last)), chords);
+                    return Step::Backup(backup, chord);
                 }
 
                 self.current.clear();
@@ -296,9 +297,10 @@ impl<S: 'static> InputTree<S> {
         elem
     }
 
+    /// Sets the handler for unbound chords, which returns whether it handled the chord
     pub fn set_backup(
         &mut self,
-        backup: impl Fn(&mut S, Chord) -> anyhow::Result<()> + 'static,
+        backup: impl Fn(&mut S, Chord) -> anyhow::Result<bool> + 'static,
         desc: impl Into<String>,
     ) {
         self.backup = Some(Rc::new(backup));

@@ -233,6 +233,19 @@ fn handle_term_event<S: 'static>(editor: &mut Editor<S>, event: event::Event) {
                             Ok(())
                         });
                 }
+                Step::Backup(backup, chord) => {
+                    hide_input_tree(editor);
+
+                    match backup(editor, chord) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            if let Err(e) = editor.emit(&mut events::ExtraInput { chord }) {
+                                errors.push(e)
+                            }
+                        }
+                        Err(e) => errors.push(e),
+                    }
+                }
                 Step::Failed => {
                     hide_input_tree(editor);
 

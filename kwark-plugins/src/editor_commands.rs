@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use kwark_buffer::Buffer;
 
 use kwark_core::{Editor, PluginState, commands::Args, frame::FRAME_COUNT_FLAG, log::Severity};
+use kwark_text::BufferEntry;
 
 use crate::internal_utils::active_buffer_normal;
 
@@ -31,6 +32,9 @@ impl<S: 'static> kwark_core::Plugin<S> for Plugin {
         registry.register("wq", |s, args| write_quit(s, path_arg(args)));
         registry.register("write-quit", |s, args| write_quit(s, path_arg(args)));
 
+        registry.register("open", |s, args| open(s, path_arg(args)));
+        registry.register("o", |s, args| open(s, path_arg(args)));
+
         registry.register("toggle_frame_count", |s, _| {
             s.core.flags.toggle(FRAME_COUNT_FLAG);
             Ok(())
@@ -56,6 +60,17 @@ pub fn quit<S: 'static>(s: &mut Editor<S>) -> anyhow::Result<()> {
 /// Writes the active buffer to `path`, or to its own file when `None`
 pub fn write<S: 'static>(s: &mut Editor<S>, path: Option<PathBuf>) -> anyhow::Result<()> {
     write_then(s, path, |_| Ok(()))
+}
+
+pub fn open<S: 'static>(s: &mut Editor<S>, path: Option<PathBuf>) -> anyhow::Result<()> {
+    let Some(path) = path else {
+        return Err(anyhow::anyhow!("Path must be passed to open"));
+    };
+
+    let id = s.core.buffers.insert(BufferEntry::new_file(path)?);
+    s.core.windows.active_mut().select(id);
+
+    Ok(())
 }
 
 /// Writes the active buffer, then quits

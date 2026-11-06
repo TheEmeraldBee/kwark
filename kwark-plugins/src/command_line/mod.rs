@@ -211,7 +211,7 @@ impl<S: Has<Plugin> + 'static> kwark_core::Plugin<S> for Plugin {
 
                 // Don't handle anything other than shift
                 if chord.mods != KeyModifiers::SHIFT && chord.mods != KeyModifiers::empty() {
-                    return Ok(());
+                    return Ok(false);
                 }
 
                 let key_string = match chord.code {
@@ -219,12 +219,12 @@ impl<S: Has<Plugin> + 'static> kwark_core::Plugin<S> for Plugin {
                         false => c.to_string(),
                         true => c.to_ascii_uppercase().to_string(),
                     },
-                    _ => return Ok(()),
+                    _ => return Ok(false),
                 };
 
                 command_line.insert(key_string.as_str());
 
-                Ok(())
+                Ok(true)
             },
             "Insert Pressed Key",
         );
