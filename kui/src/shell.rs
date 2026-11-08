@@ -1,19 +1,21 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use taffy::TaffyTree;
 use vello::Scene;
 use vello::util::RenderSurface;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event::{ElementState, Ime, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
 use crate::node::{Frame, Segment};
 use crate::{
-    App, Color, CursorIcon, Cx, Error, Event, Fonts, MouseButton, Painter, Point, ScrollDelta, Size,
+    App, Color, CursorIcon, Cx, Error, Event, Fonts, Key, KeyEvent, Mods, MouseButton, Painter,
+    Point, Proxy, ScrollDelta, Size,
 };
 
 /// One open window and what it draws with
@@ -24,6 +26,7 @@ struct WindowState<S> {
     background: Color,
     /// The pointer position in logical pixels, while it is over the window
     pointer: Option<Point>,
+    mods: Mods,
     taffy: TaffyTree<usize>,
     /// The last frame, for input until the next one
     frame: Option<Frame<S>>,
@@ -31,6 +34,8 @@ struct WindowState<S> {
     hit: Option<usize>,
     /// The path to the node that took the last mouse down
     pressed: Option<Vec<Segment>>,
+    /// The pointer icon the app set for places where no node sets one
+    app_cursor: CursorIcon,
     cursor: CursorIcon,
 }
 
@@ -45,6 +50,20 @@ impl<S> WindowState<S> {
         Size::new(size.width, size.height)
     }
 
+    /// Shows the pointer icon of the hovered nodes, or the app's icon
+    fn refresh_cursor(&mut self) {
+        let icon = self
+            .frame
+            .as_ref()
+            .and_then(|f| f.cursor(self.hit))
+            .unwrap_or(self.app_cursor);
+
+        if icon != self.cursor {
+            self.window.set_cursor(icon);
+            self.cursor = icon;
+        }
+    }
+
     /// Moves hover to the node under the pointer, asking for a frame if a look changes
     fn update_hover(&mut self, cx: &mut Cx) {
         let Some(frame) = &self.frame else {
@@ -55,13 +74,9 @@ impl<S> WindowState<S> {
         if hit != self.hit && (frame.hover_styled(self.hit) || frame.hover_styled(hit)) {
             cx.request_redraw();
         }
-        self.hit = hit;
 
-        let cursor = frame.cursor(hit);
-        if cursor != self.cursor {
-            self.window.set_cursor(cursor);
-            self.cursor = cursor;
-        }
+        self.hit = hit;
+        self.refresh_cursor();
     }
 
     /// Sends a mouse event to the node it lands on, returning whether a node took it
@@ -111,48 +126,55 @@ struct Shell<A: App> {
     app: A,
     gpu: Gpu,
     fonts: Fonts,
+    proxy: EventLoopProxy<A::Message>,
     windows: HashMap<WindowId, WindowState<A::State>>,
     error: Option<Error>,
 }
 
 impl<A: App> Shell<A> {
-    fn new(app: A) -> Self {
+    fn new(app: A, proxy: EventLoopProxy<A::Message>) -> Self {
         Self {
             app,
             gpu: Gpu::new(),
             fonts: Fonts::new(),
+            proxy,
             windows: HashMap::new(),
             error: None,
         }
     }
 
     /// Opens the app's window and adds it to the window map
-    fn open(&mut self, event_loop: &ActiveEventLoop) -> Result<(), Error> {
+    fn open(&mut self, event_loop: &ActiveEventLoop) -> Result<WindowId, Error> {
         let options = self.app.window();
         let attributes = Window::default_attributes()
             .with_title(options.title)
             .with_inner_size(LogicalSize::new(options.size.width, options.size.height));
 
         let window = Arc::new(event_loop.create_window(attributes)?);
+        window.set_ime_allowed(true);
+
         let surface = self.gpu.surface(window.clone())?;
+        let id = window.id();
 
         self.windows.insert(
-            window.id(),
+            id,
             WindowState {
                 window,
                 surface,
                 scene: Scene::new(),
                 background: options.background,
                 pointer: None,
+                mods: Mods::default(),
                 taffy: TaffyTree::new(),
                 frame: None,
                 hit: None,
                 pressed: None,
+                app_cursor: CursorIcon::Default,
                 cursor: CursorIcon::Default,
             },
         );
 
-        Ok(())
+        Ok(id)
     }
 
     /// Stops the loop and keeps the error for `run` to return
@@ -160,13 +182,95 @@ impl<A: App> Shell<A> {
         self.error = Some(error);
         event_loop.exit();
     }
+
+    /// Returns the first open window
+    fn main_window(&self) -> Option<WindowId> {
+        self.windows.keys().next().copied()
+    }
+
+    /// Runs app code with a `Cx` for a window, then applies what the code asked for
+    fn with_cx<R>(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        id: WindowId,
+        f: impl FnOnce(&mut A, &mut WindowState<A::State>, &mut Cx) -> R,
+    ) -> Option<R> {
+        let state = self.windows.get_mut(&id)?;
+        let window = state.window.clone();
+        let mut cx = Cx::new(&mut self.fonts, &window);
+
+        let result = f(&mut self.app, state, &mut cx);
+
+        if let Some(icon) = cx.cursor {
+            state.app_cursor = icon;
+            state.refresh_cursor();
+        }
+        if cx.redraw {
+            window.request_redraw();
+        }
+        if cx.quit {
+            event_loop.exit();
+        }
+
+        Some(result)
+    }
+
+    /// Gives an event to the node it lands on, or else to the app
+    fn send(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: Event) {
+        self.with_cx(event_loop, id, |app, state, cx| {
+            if !state.dispatch(&event, app.state(), cx) {
+                app.event(event, cx);
+            }
+        });
+    }
+
+    /// Builds, lays out, paints, and shows one frame
+    fn redraw(&mut self, event_loop: &ActiveEventLoop, id: WindowId) {
+        let Some(root) = self.with_cx(event_loop, id, |app, _, cx| app.view(cx)) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&id) else {
+            return;
+        };
+
+        let size = state.size();
+        let scale = state.scale();
+
+        let mut frame = match Frame::build(root, size, &mut self.fonts, &mut state.taffy) {
+            Ok(frame) => frame,
+            Err(e) => return self.fail(event_loop, e),
+        };
+
+        state.hit = state.pointer.and_then(|p| frame.hit(p));
+
+        state.scene.reset();
+        let mut painter = Painter::new(
+            &mut state.scene,
+            &mut self.fonts,
+            scale,
+            size,
+            state.pointer,
+        );
+        frame.paint(&mut painter, self.app.state(), state.hit);
+        state.frame = Some(frame);
+        state.refresh_cursor();
+        self.fonts.end_frame();
+
+        let res = self
+            .gpu
+            .present(&state.surface, &state.scene, state.background);
+
+        if let Err(e) = res {
+            self.fail(event_loop, e);
+        }
+    }
 }
 
-/// Returns the kui event for a winit event, updating the window's pointer
+/// Returns the kui event for a winit event, updating the window's input state
 fn translate<S>(state: &mut WindowState<S>, event: &WindowEvent) -> Option<Event> {
     let scale = state.scale();
 
-    match *event {
+    match event {
         WindowEvent::CursorMoved { position, .. } => {
             let position = position.to_logical::<f32>(scale);
             let position = Point::new(position.x, position.y);
@@ -184,7 +288,7 @@ fn translate<S>(state: &mut WindowState<S>, event: &WindowEvent) -> Option<Event
             ..
         } => {
             let position = state.pointer.unwrap_or_default();
-            let button = button.into();
+            let button = (*button).into();
 
             Some(match pressed {
                 ElementState::Pressed => Event::MouseDown { position, button },
@@ -192,7 +296,7 @@ fn translate<S>(state: &mut WindowState<S>, event: &WindowEvent) -> Option<Event
             })
         }
         WindowEvent::MouseWheel { delta, .. } => {
-            let delta = match delta {
+            let delta = match *delta {
                 MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines(Point::new(x, y)),
                 MouseScrollDelta::PixelDelta(p) => {
                     let p = p.to_logical::<f32>(scale);
@@ -205,18 +309,62 @@ fn translate<S>(state: &mut WindowState<S>, event: &WindowEvent) -> Option<Event
                 delta,
             })
         }
+        WindowEvent::ModifiersChanged(mods) => {
+            state.mods = mods.state().into();
+            None
+        }
+        WindowEvent::KeyboardInput { event, .. } => {
+            if event.state != ElementState::Pressed {
+                return None;
+            }
+
+            let key = Key::from_winit(&event.logical_key)?;
+            let mods = state.mods;
+            let text = event
+                .text
+                .as_ref()
+                .filter(|t| !mods.ctrl && !mods.logo && !t.chars().any(char::is_control))
+                .map(|t| t.to_string());
+
+            Some(Event::Key(KeyEvent {
+                key,
+                text,
+                mods,
+                repeat: event.repeat,
+            }))
+        }
+        WindowEvent::Ime(Ime::Commit(text)) => Some(Event::Text(text.clone())),
+        WindowEvent::Ime(Ime::Preedit(text, cursor)) => Some(Event::Preedit {
+            text: text.clone(),
+            cursor: *cursor,
+        }),
+        WindowEvent::Resized(_) => Some(Event::Resize(state.size())),
+        WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+            Some(Event::Scale(*scale_factor as f32))
+        }
+        WindowEvent::Focused(focused) => Some(Event::Focus(*focused)),
         _ => None,
     }
 }
 
-impl<A: App> ApplicationHandler for Shell<A> {
+impl<A: App> ApplicationHandler<A::Message> for Shell<A> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if !self.windows.is_empty() {
             return;
         }
 
-        if let Err(e) = self.open(event_loop) {
-            self.fail(event_loop, e);
+        let id = match self.open(event_loop) {
+            Ok(id) => id,
+            Err(e) => return self.fail(event_loop, e),
+        };
+
+        let proxy = Proxy(self.proxy.clone());
+        self.with_cx(event_loop, id, |app, _, cx| app.init(proxy, cx));
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, message: A::Message) {
+        if let Some(id) = self.main_window() {
+            self.with_cx(event_loop, id, |app, _, cx| app.message(message, cx));
         }
     }
 
@@ -225,100 +373,61 @@ impl<A: App> ApplicationHandler for Shell<A> {
             return;
         };
 
-        if let Some(event) = translate(state, &event) {
-            let mut cx = Cx {
-                fonts: &mut self.fonts,
-                size: state.size(),
-                scale: state.scale() as f32,
-                redraw: false,
-            };
-
-            if !state.dispatch(&event, self.app.state(), &mut cx) {
-                self.app.event(event, &mut cx);
-            }
-
-            if cx.redraw {
-                state.window.request_redraw();
-            }
-
-            return;
-        }
-
         match event {
             WindowEvent::CloseRequested => {
-                self.windows.remove(&id);
+                let keep = self.with_cx(event_loop, id, |app, _, cx| {
+                    app.event(Event::CloseRequested, cx);
+                    cx.keep_open
+                });
 
+                if keep != Some(true) {
+                    self.windows.remove(&id);
+                }
                 if self.windows.is_empty() {
                     event_loop.exit();
                 }
             }
-            WindowEvent::Resized(size) => {
-                self.gpu.resize(&mut state.surface, size.width, size.height);
-                state.window.request_redraw();
-            }
-            WindowEvent::ScaleFactorChanged { .. } => {
-                state.window.request_redraw();
-            }
-            WindowEvent::RedrawRequested => {
-                let size = state.size();
-                let scale = state.scale();
-
-                let mut cx = Cx {
-                    fonts: &mut self.fonts,
-                    size,
-                    scale: scale as f32,
-                    redraw: false,
-                };
-                let root = self.app.view(&mut cx);
-                let again = cx.redraw;
-
-                let mut frame = match Frame::build(root, size, &mut self.fonts, &mut state.taffy) {
-                    Ok(frame) => frame,
-                    Err(e) => return self.fail(event_loop, e),
-                };
-
-                state.hit = state.pointer.and_then(|p| frame.hit(p));
-                let cursor = frame.cursor(state.hit);
-                if cursor != state.cursor {
-                    state.window.set_cursor(cursor);
-                    state.cursor = cursor;
+            WindowEvent::RedrawRequested => self.redraw(event_loop, id),
+            _ => {
+                match event {
+                    WindowEvent::Resized(size) => {
+                        self.gpu.resize(&mut state.surface, size.width, size.height);
+                        state.window.request_redraw();
+                    }
+                    WindowEvent::ScaleFactorChanged { .. } => state.window.request_redraw(),
+                    _ => {}
                 }
 
-                state.scene.reset();
-                let mut painter = Painter::new(
-                    &mut state.scene,
-                    &mut self.fonts,
-                    scale,
-                    size,
-                    state.pointer,
-                );
-                frame.paint(&mut painter, self.app.state(), state.hit);
-                state.frame = Some(frame);
-                self.fonts.end_frame();
-
-                let res = self
-                    .gpu
-                    .present(&state.surface, &state.scene, state.background);
-
-                if let Err(e) = res {
-                    return self.fail(event_loop, e);
-                }
-
-                if again {
-                    state.window.request_redraw();
+                if let Some(event) = translate(state, &event) {
+                    self.send(event_loop, id, event);
                 }
             }
-            _ => {}
         }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(id) = self.main_window() else {
+            return;
+        };
+
+        let now = Instant::now();
+        if self.app.deadline().is_some_and(|t| t <= now) {
+            self.with_cx(event_loop, id, |app, _, cx| app.wake(now, cx));
+        }
+
+        event_loop.set_control_flow(match self.app.deadline() {
+            Some(t) => ControlFlow::WaitUntil(t),
+            None => ControlFlow::Wait,
+        });
     }
 }
 
-/// Runs the app until its last window closes
+/// Runs the app until it quits or its last window closes
 pub fn run<A: App>(app: A) -> Result<(), Error> {
-    let event_loop = EventLoop::new()?;
+    let event_loop = EventLoop::<A::Message>::with_user_event().build()?;
     event_loop.set_control_flow(ControlFlow::Wait);
 
-    let mut shell = Shell::new(app);
+    let mut shell = Shell::new(app, event_loop.create_proxy());
     event_loop.run_app(&mut shell)?;
 
     match shell.error {

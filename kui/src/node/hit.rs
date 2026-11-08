@@ -27,10 +27,9 @@ impl<S> Frame<S> {
             .find(|&i| self.nodes[i].on_click.is_some())
     }
 
-    /// Returns the pointer icon for the hovered node
-    pub fn cursor(&self, hit: Option<usize>) -> CursorIcon {
+    /// Returns the pointer icon that the hovered nodes set, if any
+    pub fn cursor(&self, hit: Option<usize>) -> Option<CursorIcon> {
         hit.and_then(|h| self.ancestors(h).find_map(|i| self.nodes[i].cursor))
-            .unwrap_or_default()
     }
 
     /// Returns whether hover changes the look of any node above `hit`

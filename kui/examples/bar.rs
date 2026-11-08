@@ -146,6 +146,7 @@ impl Bar {
 
 impl App for Bar {
     type State = Self;
+    type Message = ();
 
     fn window(&self) -> WindowOptions {
         WindowOptions {

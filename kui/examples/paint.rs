@@ -136,6 +136,7 @@ impl Demo {
 
 impl App for Demo {
     type State = Self;
+    type Message = ();
 
     fn state(&mut self) -> &mut Self {
         self

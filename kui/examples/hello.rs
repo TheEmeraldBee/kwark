@@ -6,6 +6,7 @@ struct Hello;
 
 impl App for Hello {
     type State = Self;
+    type Message = ();
 
     fn state(&mut self) -> &mut Self {
         self

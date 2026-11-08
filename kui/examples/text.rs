@@ -169,6 +169,7 @@ impl Viewer {
 
 impl App for Viewer {
     type State = Self;
+    type Message = ();
 
     fn state(&mut self) -> &mut Self {
         self
