@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyModifiers, MouseButton};
+use crate::{KeyCode, KeyModifiers, MouseButton};
 
 use crate::{Chord, Code};
 

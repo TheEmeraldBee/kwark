@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::ops::Range;
 
-use ratatui::style::Style;
+use kwark_theme::Style;
 
 use crate::LineCtx;
 

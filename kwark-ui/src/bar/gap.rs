@@ -1,29 +1,16 @@
+use kui::{Node, div};
 use kwark_render::Element;
-use ratatui::widgets::{Paragraph, Widget};
 
 use kwark_core::Editor;
 
+/// Empty space some characters wide
 pub struct Gap(pub u16);
 
 impl<S: 'static, C> Element<Editor<S>, C> for Gap {
-    fn width(&mut self, _state: &mut Editor<S>, _ctx: &C, _available: u16) -> u16 {
-        self.0
-    }
+    fn view(&mut self, state: &mut Editor<S>, _ctx: &C) -> Option<Node<Editor<S>>> {
+        let width = f32::from(self.0) * state.core.pipeline.metrics.char_width;
+        let gap = div().w(width).h_full();
 
-    fn height(&mut self, _state: &mut Editor<S>, _ctx: &C) -> u16 {
-        1
-    }
-
-    fn render(
-        &mut self,
-        state: &mut Editor<S>,
-        _ctx: &C,
-        area: ratatui::prelude::Rect,
-        buf: &mut ratatui::prelude::Buffer,
-    ) {
-        let theme = state.core.theme.get("bar.gap");
-        Paragraph::new(" ".repeat(self.0 as usize))
-            .style(theme)
-            .render(area, buf);
+        Some(state.core.theme.get("bar.gap").apply(gap))
     }
 }

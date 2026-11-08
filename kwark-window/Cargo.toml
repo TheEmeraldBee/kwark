@@ -9,7 +9,7 @@ kwark-bus.workspace = true
 kwark-buffer.workspace = true
 kwark-render.workspace = true
 
-ratatui.workspace = true
+kui.workspace = true
 
 [dev-dependencies]
 kwark-text.workspace = true

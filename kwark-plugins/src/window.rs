@@ -1,4 +1,4 @@
-use ratatui::layout::Direction;
+use kwark_window::Direction;
 
 use kwark_core::prelude::*;
 

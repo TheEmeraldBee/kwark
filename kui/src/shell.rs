@@ -197,7 +197,7 @@ impl<A: App> Shell<A> {
     ) -> Option<R> {
         let state = self.windows.get_mut(&id)?;
         let window = state.window.clone();
-        let mut cx = Cx::new(&mut self.fonts, &window);
+        let mut cx = Cx::new(&mut self.fonts, &window, state.mods);
 
         let result = f(&mut self.app, state, &mut cx);
 

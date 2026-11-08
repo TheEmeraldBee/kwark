@@ -7,5 +7,4 @@ license.workspace = true
 [dependencies]
 kwark-bus.workspace = true
 anyhow.workspace = true
-crossterm.workspace = true
 thiserror.workspace = true

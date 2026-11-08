@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use kwark_core::Editor;
 use kwark_render::*;
-use ratatui::style::Style;
+use kwark_theme::Style;
 
 struct TreeSitterHighlight {
     range: Range<usize>,
@@ -71,7 +71,7 @@ impl<S: 'static> Highlighter<Editor<S>> for TreeSitter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::style::Color;
+    use kui::Color;
 
     fn hl(range: Range<usize>, color: Color, priority: usize) -> TreeSitterHighlight {
         TreeSitterHighlight {
@@ -98,31 +98,37 @@ mod tests {
     #[test]
     fn nested_capture_keeps_outer_style_around_it() {
         // An escape inside a string, with the string pattern declared later
-        let hl = resolve(vec![hl(0..10, Color::Green, 5), hl(3..5, Color::Red, 2)]);
+        let hl = resolve(vec![
+            hl(0..10, Color::rgb(0x00FF00), 5),
+            hl(3..5, Color::rgb(0xFF0000), 2),
+        ]);
 
-        assert_eq!(hl.style_at(1).fg, Some(Color::Green));
-        assert_eq!(hl.style_at(3).fg, Some(Color::Red));
-        assert_eq!(hl.style_at(7).fg, Some(Color::Green));
+        assert_eq!(hl.style_at(1).fg, Some(Color::rgb(0x00FF00)));
+        assert_eq!(hl.style_at(3).fg, Some(Color::rgb(0xFF0000)));
+        assert_eq!(hl.style_at(7).fg, Some(Color::rgb(0x00FF00)));
     }
 
     #[test]
     fn later_pattern_wins_on_the_same_node() {
-        let hl = resolve(vec![hl(0..3, Color::Blue, 9), hl(0..3, Color::White, 1)]);
+        let hl = resolve(vec![
+            hl(0..3, Color::rgb(0x0000FF), 9),
+            hl(0..3, Color::rgb(0xFFFFFF), 1),
+        ]);
 
-        assert_eq!(hl.style_at(1).fg, Some(Color::Blue));
+        assert_eq!(hl.style_at(1).fg, Some(Color::rgb(0x0000FF)));
     }
 
     #[test]
     fn neighbors_inside_a_wide_capture_stay_separate() {
         let hl = resolve(vec![
-            hl(0..20, Color::Green, 1),
-            hl(2..4, Color::Red, 3),
-            hl(10..12, Color::White, 0),
+            hl(0..20, Color::rgb(0x00FF00), 1),
+            hl(2..4, Color::rgb(0xFF0000), 3),
+            hl(10..12, Color::rgb(0xFFFFFF), 0),
         ]);
 
-        assert_eq!(hl.style_at(2).fg, Some(Color::Red));
-        assert_eq!(hl.style_at(6).fg, Some(Color::Green));
-        assert_eq!(hl.style_at(10).fg, Some(Color::White));
-        assert_eq!(hl.style_at(15).fg, Some(Color::Green));
+        assert_eq!(hl.style_at(2).fg, Some(Color::rgb(0xFF0000)));
+        assert_eq!(hl.style_at(6).fg, Some(Color::rgb(0x00FF00)));
+        assert_eq!(hl.style_at(10).fg, Some(Color::rgb(0xFFFFFF)));
+        assert_eq!(hl.style_at(15).fg, Some(Color::rgb(0x00FF00)));
     }
 }

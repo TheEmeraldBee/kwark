@@ -217,6 +217,18 @@ impl<S> Node<S> {
         self
     }
 
+    /// Sets the width as a fraction of the parent's width
+    pub fn w_frac(mut self, fraction: f32) -> Self {
+        self.style.size.width = Dimension::percent(fraction);
+        self
+    }
+
+    /// Sets the height as a fraction of the parent's height
+    pub fn h_frac(mut self, fraction: f32) -> Self {
+        self.style.size.height = Dimension::percent(fraction);
+        self
+    }
+
     pub fn min_w(mut self, width: f32) -> Self {
         self.style.min_size.width = length_auto(width);
         self
@@ -298,6 +310,30 @@ impl<S> Node<S> {
             bottom: inset,
             left: inset,
         };
+        self
+    }
+
+    /// Sets the offset from the top of the parent
+    pub fn top(mut self, inset: f32) -> Self {
+        self.style.inset.top = length_auto(inset);
+        self
+    }
+
+    /// Sets the offset from the right of the parent
+    pub fn right(mut self, inset: f32) -> Self {
+        self.style.inset.right = length_auto(inset);
+        self
+    }
+
+    /// Sets the offset from the bottom of the parent
+    pub fn bottom(mut self, inset: f32) -> Self {
+        self.style.inset.bottom = length_auto(inset);
+        self
+    }
+
+    /// Sets the offset from the left of the parent
+    pub fn left(mut self, inset: f32) -> Self {
+        self.style.inset.left = length_auto(inset);
         self
     }
 

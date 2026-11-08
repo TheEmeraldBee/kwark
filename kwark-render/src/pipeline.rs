@@ -1,16 +1,18 @@
 use std::rc::Rc;
 
+use kui::{Node, Painter, Point, Rect};
 use kwark_text::Cursor;
 use kwark_tree_sitter::tree::SyntaxTree;
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
 use ropey::Rope;
 
-use crate::{Border, ElementGrid, Gutters, Highlight, Highlighters, LineCtx, Renderers, plain_col};
+use crate::{
+    Border, ElementGrid, Gutters, Highlight, Highlighters, LineCtx, Metrics, Renderers, plain_col,
+};
 
 /// The configuration for how to render a buffer to the screen
 pub struct Pipeline<S> {
     pub tab: Rc<str>,
+    pub metrics: Metrics,
 
     pub highlighters: Highlighters<S>,
     pub renderers: Renderers<S>,
@@ -19,16 +21,22 @@ pub struct Pipeline<S> {
 
 impl<S> Default for Pipeline<S> {
     fn default() -> Self {
+        Self::new(Metrics::default())
+    }
+}
+
+impl<S> Pipeline<S> {
+    /// Returns an empty pipeline that lays out text with the given metrics
+    pub fn new(metrics: Metrics) -> Self {
         Self {
             tab: Rc::from("   "),
+            metrics,
             highlighters: Highlighters::default(),
             renderers: Renderers::default(),
             gutters: Gutters::default(),
         }
     }
-}
 
-impl<S> Pipeline<S> {
     /// Sets the tab-characters for the renderer
     pub fn set_tab(&mut self, tab: &str) {
         self.tab = Rc::from(tab);
@@ -42,7 +50,7 @@ pub struct Viewport {
     pub bottom_line: usize,
 }
 
-pub struct RenderArgs<'a, S> {
+pub struct RenderArgs<'a, 'p, S> {
     pub rope: &'a Rope,
     pub state: &'a mut S,
     pub scroll_top: usize,
@@ -50,7 +58,7 @@ pub struct RenderArgs<'a, S> {
     pub primary: usize,
     pub tree: Option<&'a SyntaxTree>,
     pub area: Rect,
-    pub buf: &'a mut Buffer,
+    pub painter: &'a mut Painter<'p>,
 }
 
 pub struct HitArgs<'a, S> {
@@ -61,7 +69,7 @@ pub struct HitArgs<'a, S> {
     pub primary: usize,
     pub tree: Option<&'a SyntaxTree>,
     pub area: Rect,
-    pub point: Position,
+    pub point: Point,
 }
 
 pub struct CellArgs<'a, S> {
@@ -107,7 +115,7 @@ impl<S> Pipeline<S> {
             primary,
             tree,
             area,
-            buf,
+            painter,
         }: RenderArgs<S>,
     ) -> Viewport {
         let source = Source {
@@ -118,16 +126,25 @@ impl<S> Pipeline<S> {
             tree,
             area,
         };
-        let rows = self.layout(state, source);
+        let metrics = self.metrics.clone();
+        let rows = layout(
+            &mut self.highlighters,
+            &mut self.renderers,
+            &self.gutters,
+            &self.tab,
+            &metrics,
+            state,
+            source,
+        );
 
         for row in &rows {
-            if row.gutter.width > 0 {
+            if row.gutter.size.width > 0.0 {
                 self.gutters
-                    .render(state, &row.ctx, &row.hl, row.gutter, buf, row.gutter.height);
+                    .render(state, &row.ctx, &row.hl, row.gutter, painter);
             }
 
             self.renderers
-                .render(state, &row.ctx, &row.hl, row.text, buf);
+                .render(state, &row.ctx, &row.hl, row.text, painter);
         }
 
         Viewport {
@@ -150,7 +167,7 @@ impl<S> Pipeline<S> {
             point,
         }: HitArgs<S>,
     ) -> Option<(usize, usize)> {
-        if !area.contains(point) || point.x < area.x + self.gutters.measure() {
+        if !area.contains(point) || point.x < area.left() + self.gutters.measure(&self.metrics) {
             return None;
         }
 
@@ -162,18 +179,27 @@ impl<S> Pipeline<S> {
             tree,
             area,
         };
-        let rows = self.layout(state, source);
-        let row = rows.iter().find(|r| point.y < r.text.y + r.text.height)?;
+        let metrics = self.metrics.clone();
+        let rows = layout(
+            &mut self.highlighters,
+            &mut self.renderers,
+            &self.gutters,
+            &self.tab,
+            &metrics,
+            state,
+            source,
+        );
+        let row = rows.iter().find(|r| point.y < r.text.bottom())?;
 
         let col = self
             .renderers
             .hit_col(state, &row.ctx, &row.hl, row.text, point)
-            .unwrap_or_else(|| plain_col(&row.ctx, row.text, point));
+            .unwrap_or_else(|| plain_col(&row.ctx, &row.hl, row.text, point));
 
         Some((row.ctx.line, col))
     }
 
-    /// Screen cell for a buffer line and column, None when it is off screen
+    /// Top left of a buffer line and column, None when it is off screen
     pub fn cell_of(
         &mut self,
         CellArgs {
@@ -187,7 +213,7 @@ impl<S> Pipeline<S> {
             line,
             col,
         }: CellArgs<S>,
-    ) -> Option<Position> {
+    ) -> Option<Point> {
         if line < scroll_top || line >= rope.len_lines() {
             return None;
         }
@@ -200,7 +226,16 @@ impl<S> Pipeline<S> {
             tree,
             area,
         };
-        let rows = self.layout(state, source);
+        let metrics = self.metrics.clone();
+        let rows = layout(
+            &mut self.highlighters,
+            &mut self.renderers,
+            &self.gutters,
+            &self.tab,
+            &metrics,
+            state,
+            source,
+        );
         let row = rows.iter().find(|r| r.ctx.line == line)?;
 
         let pos = self
@@ -209,83 +244,65 @@ impl<S> Pipeline<S> {
 
         row.text.contains(pos).then_some(pos)
     }
+}
 
-    /// Lines on screen from scroll_top and the rects they take
-    fn layout<'a>(&mut self, state: &mut S, source: Source<'a>) -> Vec<Row<'a>> {
-        let Source {
+/// Lines on screen from scroll_top and the rects they take
+fn layout<'a, S>(
+    highlighters: &mut Highlighters<S>,
+    renderers: &mut Renderers<S>,
+    gutters: &Gutters<S>,
+    tab: &Rc<str>,
+    metrics: &'a Metrics,
+    state: &mut S,
+    source: Source<'a>,
+) -> Vec<Row<'a>> {
+    let Source {
+        rope,
+        scroll_top,
+        cursors,
+        primary,
+        tree,
+        area,
+    } = source;
+
+    let gutter_width = gutters.measure(metrics).min(area.size.width);
+    let text_width = area.size.width - gutter_width;
+
+    let mut rows = Vec::new();
+    let mut used = 0.0;
+    let mut line = scroll_top;
+
+    while used < area.size.height && line < rope.len_lines() {
+        let ctx = LineCtx {
             rope,
-            scroll_top,
+            line,
+            tab: tab.clone(),
+            text: rope.line(line),
+            width: text_width,
             cursors,
             primary,
             tree,
-            area,
-        } = source;
+            metrics,
+        };
 
-        let gutter_width = self.gutters.measure().min(area.width);
-        let text_width = area.width - gutter_width;
+        let hl = highlighters.resolve(state, &ctx);
+        let height = renderers
+            .measure(state, &ctx, &hl)
+            .min(area.size.height - used);
+        let y = area.top() + used;
 
-        let mut rows = Vec::new();
-        let mut used: u16 = 0;
-        let mut line = scroll_top;
+        rows.push(Row {
+            ctx,
+            hl,
+            gutter: Rect::new(area.left(), y, gutter_width, height),
+            text: Rect::new(area.left() + gutter_width, y, text_width, height),
+        });
 
-        while used < area.height && line < rope.len_lines() {
-            let ctx = LineCtx {
-                rope,
-                line,
-                tab: self.tab.clone(),
-                text: rope.line(line),
-                width: text_width,
-                cursors,
-                primary,
-                tree,
-            };
-
-            let hl = self.highlighters.resolve(state, &ctx);
-            let height = self
-                .renderers
-                .measure(state, &ctx, &hl)
-                .min(area.height - used);
-            let y = area.y + used;
-
-            rows.push(Row {
-                ctx,
-                hl,
-                gutter: Rect::new(area.x, y, gutter_width, height),
-                text: Rect::new(area.x + gutter_width, y, text_width, height),
-            });
-
-            used += height;
-            line += 1;
-        }
-
-        rows
+        used += height;
+        line += 1;
     }
-}
 
-/// Splits `area` into top, middle, and bottom bands of the given heights
-pub fn split_vertically(area: Rect, top: u16, bottom: u16) -> (Rect, Rect, Rect) {
-    let middle = area.height.saturating_sub(top + bottom);
-
-    let top_rect = Rect {
-        x: area.x,
-        y: area.y,
-        width: area.width,
-        height: top,
-    };
-    let middle_rect = Rect {
-        x: area.x,
-        y: area.y + top,
-        width: area.width,
-        height: middle,
-    };
-    let bottom_rect = Rect {
-        x: area.x,
-        y: area.y + top + middle,
-        width: area.width,
-        height: bottom,
-    };
-
-    (top_rect, middle_rect, bottom_rect)
+    rows
 }
 
 /// A pipeline to run when rendering a window
@@ -334,19 +351,10 @@ impl<S, C> Default for EditorPipeline<S, C> {
     }
 }
 
-impl<S, C> EditorPipeline<S, C> {
-    /// Draws the editor's elements, returning what space is available for windows
-    pub fn render(&mut self, state: &mut S, ctx: &C, area: Rect, buf: &mut Buffer) -> Rect {
-        let top_h = self.top.height(state, ctx, area.height);
-        let bottom_h = self
-            .bottom
-            .height(state, ctx, area.height.saturating_sub(top_h));
-        let (top_rect, grid_rect, bottom_rect) = split_vertically(area, top_h, bottom_h);
-
-        self.top.render(state, ctx, top_rect, buf);
-        self.bottom.render(state, ctx, bottom_rect, buf);
-
-        grid_rect
+impl<S: 'static, C> EditorPipeline<S, C> {
+    /// Returns the editor's top and bottom rows
+    pub fn view(&mut self, state: &mut S, ctx: &C) -> (Vec<Node<S>>, Vec<Node<S>>) {
+        (self.top.view(state, ctx), self.bottom.view(state, ctx))
     }
 }
 
@@ -355,12 +363,12 @@ mod test {
     use super::*;
     use crate::{Gutter, Renderer};
 
-    /// Claims three rows for the first line only
+    /// Claims three lines of height for the first line only
     struct Tall;
 
     impl Renderer<()> for Tall {
-        fn claim(&mut self, _state: &mut (), ctx: &LineCtx, _hl: &Highlight) -> Option<u16> {
-            (ctx.line == 0).then_some(3)
+        fn claim(&mut self, _state: &mut (), ctx: &LineCtx, _hl: &Highlight) -> Option<f32> {
+            (ctx.line == 0).then_some(ctx.metrics.line_height * 3.0)
         }
 
         fn render(
@@ -369,16 +377,17 @@ mod test {
             _ctx: &LineCtx,
             _hl: &Highlight,
             _area: Rect,
-            _buf: &mut Buffer,
+            _p: &mut Painter,
         ) {
         }
     }
 
-    struct Blank(u16);
+    /// A gutter some characters wide
+    struct Blank(f32);
 
     impl Gutter<()> for Blank {
-        fn width(&self) -> u16 {
-            self.0
+        fn width(&self, metrics: &Metrics) -> f32 {
+            self.0 * metrics.char_width
         }
 
         fn render(
@@ -387,9 +396,15 @@ mod test {
             _ctx: &LineCtx,
             _hl: &Highlight,
             _area: Rect,
-            _buf: &mut Buffer,
+            _p: &mut Painter,
         ) {
         }
+    }
+
+    /// Returns an area ten characters wide and four lines tall
+    fn area(p: &Pipeline<()>) -> Rect {
+        let m = &p.metrics;
+        Rect::new(0.0, 0.0, 10.0 * m.char_width, 4.0 * m.line_height)
     }
 
     fn cell_of(
@@ -398,7 +413,8 @@ mod test {
         scroll_top: usize,
         line: usize,
         col: usize,
-    ) -> Option<Position> {
+    ) -> Option<Point> {
+        let area = area(pipeline);
         pipeline.cell_of(CellArgs {
             rope,
             state: &mut (),
@@ -406,17 +422,14 @@ mod test {
             cursors: &[],
             primary: 0,
             tree: None,
-            area: Rect::new(0, 0, 10, 4),
+            area,
             line,
             col,
         })
     }
 
-    fn hit_test(
-        pipeline: &mut Pipeline<()>,
-        rope: &Rope,
-        point: Position,
-    ) -> Option<(usize, usize)> {
+    fn hit_test(pipeline: &mut Pipeline<()>, rope: &Rope, point: Point) -> Option<(usize, usize)> {
+        let area = area(pipeline);
         pipeline.hit_test(HitArgs {
             rope,
             state: &mut (),
@@ -424,7 +437,7 @@ mod test {
             cursors: &[],
             primary: 0,
             tree: None,
-            area: Rect::new(0, 0, 10, 4),
+            area,
             point,
         })
     }
@@ -433,12 +446,13 @@ mod test {
     fn lines_off_screen_have_no_cell() {
         let rope = Rope::from_str("a\nb\nc\nd\ne\nf");
         let mut pipeline = Pipeline::default();
+        let line_height = pipeline.metrics.line_height;
 
         assert_eq!(cell_of(&mut pipeline, &rope, 1, 0, 0), None);
         assert_eq!(cell_of(&mut pipeline, &rope, 1, 5, 0), None);
         assert_eq!(
             cell_of(&mut pipeline, &rope, 1, 2, 0),
-            Some(Position::new(0, 1))
+            Some(Point::new(0.0, line_height))
         );
     }
 
@@ -446,13 +460,14 @@ mod test {
     fn tall_rows_and_gutters_shift_cells() {
         let rope = Rope::from_str("a\nb\nc");
         let mut pipeline = Pipeline::default();
+        let m = pipeline.metrics.clone();
 
         pipeline.renderers.push(Tall);
-        pipeline.gutters.push(Blank(2));
+        pipeline.gutters.push(Blank(2.0));
 
         assert_eq!(
             cell_of(&mut pipeline, &rope, 0, 1, 0),
-            Some(Position::new(2, 3))
+            Some(Point::new(2.0 * m.char_width, 3.0 * m.line_height))
         );
         assert_eq!(cell_of(&mut pipeline, &rope, 0, 2, 0), None);
     }
@@ -462,11 +477,12 @@ mod test {
         let rope = Rope::from_str("名x\nab");
         let mut pipeline = Pipeline::default();
 
-        pipeline.gutters.push(Blank(1));
+        pipeline.gutters.push(Blank(1.0));
 
         for (line, col) in [(0, 0), (0, 1), (1, 1)] {
             let cell = cell_of(&mut pipeline, &rope, 0, line, col).unwrap();
-            assert_eq!(hit_test(&mut pipeline, &rope, cell), Some((line, col)));
+            let inside = Point::new(cell.x + 1.0, cell.y + 1.0);
+            assert_eq!(hit_test(&mut pipeline, &rope, inside), Some((line, col)));
         }
     }
 }

@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 
+use kui::{Node, Point, Rect, div};
 use kwark_buffer as buffer;
 use kwark_bus::EventSender;
 use kwark_render::{Boundaries, Pipeline};
 
-use ratatui::layout::{self, Position, Rect};
-use ratatui::prelude::*;
+use crate::{FocusChanged, Window};
 
-use crate::{FocusChanged, Window, WindowPipeline};
+/// The axis that a split lays its two halves along
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Direction {
+    /// Side by side
+    Horizontal,
+    /// One above the other
+    Vertical,
+}
 
 /// Identifies a window within a [`WindowLayout`]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -32,28 +39,13 @@ struct LeafEntry {
 
 /// A two-way split of the layout
 struct Split {
-    direction: layout::Direction,
+    direction: Direction,
 
+    /// The share of the space that the first child takes
     ratio: f32,
 
     children: [Child; 2],
     parent: Option<NodeId>,
-}
-
-impl Split {
-    /// Divides `rect` into this split's two children's rects
-    fn rects(&self, rect: Rect) -> [Rect; 2] {
-        let percentage = (self.ratio * 100.0).round() as u16;
-        let rects = Layout::default()
-            .direction(self.direction)
-            .constraints([
-                layout::Constraint::Percentage(percentage),
-                layout::Constraint::Percentage(100 - percentage),
-            ])
-            .split(rect);
-
-        [rects[0], rects[1]]
-    }
 }
 
 /// The layout of the editor's windows
@@ -135,7 +127,7 @@ impl WindowLayout {
     }
 
     /// Moves focus to the window adjacent to the active one along `direction`
-    pub fn focus_direction(&mut self, direction: layout::Direction, forward: bool) {
+    pub fn focus_direction(&mut self, direction: Direction, forward: bool) {
         let mut child = Child::Leaf(self.active);
         let mut parent = self.leaves[&self.active].parent;
 
@@ -208,7 +200,7 @@ impl WindowLayout {
     }
 
     /// Splits the active window in the given direction, focusing the new half
-    pub fn split(&mut self, direction: layout::Direction) -> LeafId {
+    pub fn split(&mut self, direction: Direction) -> LeafId {
         let old_id = self.active;
         let old_parent = self.leaves[&old_id].parent;
 
@@ -257,7 +249,7 @@ impl WindowLayout {
 
     /// Moves the border of the active window's nearest `direction` split by `amount`
     /// (between 0 and 1)
-    pub fn resize(&mut self, direction: layout::Direction, amount: f32) {
+    pub fn resize(&mut self, direction: Direction, amount: f32) {
         let mut parent = self.leaves[&self.active].parent;
 
         while let Some(parent_id) = parent {
@@ -291,65 +283,32 @@ impl WindowLayout {
         }
     }
 
-    /// Renders the layout to the frame in the given rect
-    pub fn render<S>(
+    /// Returns the tree of every window, with the node for each window from `leaf`
+    pub fn view<S>(
         &mut self,
-        storage: &buffer::Storage,
-        frame: &mut Frame<'_>,
-        rect: Rect,
-
-        pipeline: &mut Pipeline<S>,
-        window_pipeline: &mut WindowPipeline<S>,
-        state: &mut S,
-    ) {
-        self.render_child(
-            self.root,
-            storage,
-            frame,
-            rect,
-            pipeline,
-            window_pipeline,
-            state,
-            Boundaries::default(),
-        );
+        mut leaf: impl FnMut(LeafId, &mut Window, bool, Boundaries) -> Node<S>,
+    ) -> Node<S> {
+        self.view_child(self.root, &mut leaf, Boundaries::default())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_child<S>(
+    fn view_child<S>(
         &mut self,
         child: Child,
-        storage: &buffer::Storage,
-        frame: &mut Frame<'_>,
-        rect: Rect,
-
-        pipeline: &mut Pipeline<S>,
-        window_pipeline: &mut WindowPipeline<S>,
-        state: &mut S,
-
+        leaf: &mut impl FnMut(LeafId, &mut Window, bool, Boundaries) -> Node<S>,
         boundaries: Boundaries,
-    ) {
+    ) -> Node<S> {
         match child {
             Child::Leaf(id) => {
-                let is_active = id == self.active;
+                let active = id == self.active;
                 let entry = self.leaves.get_mut(&id).unwrap();
-                entry.window.render(
-                    storage,
-                    frame,
-                    rect,
-                    pipeline,
-                    window_pipeline,
-                    state,
-                    is_active,
-                    boundaries,
-                );
+                leaf(id, &mut entry.window, active, boundaries)
             }
             Child::Split(id) => {
                 let split = &self.splits[&id];
-                let rects = split.rects(rect);
-                let children = split.children;
+                let (direction, ratio, children) = (split.direction, split.ratio, split.children);
 
-                let (first, second) = match split.direction {
-                    layout::Direction::Horizontal => (
+                let (first, second) = match direction {
+                    Direction::Horizontal => (
                         Boundaries {
                             right: true,
                             ..boundaries
@@ -359,7 +318,7 @@ impl WindowLayout {
                             ..boundaries
                         },
                     ),
-                    layout::Direction::Vertical => (
+                    Direction::Vertical => (
                         Boundaries {
                             bottom: true,
                             ..boundaries
@@ -371,32 +330,34 @@ impl WindowLayout {
                     ),
                 };
 
-                self.render_child(
-                    children[0],
-                    storage,
-                    frame,
-                    rects[0],
-                    pipeline,
-                    window_pipeline,
-                    state,
-                    first,
-                );
-                self.render_child(
-                    children[1],
-                    storage,
-                    frame,
-                    rects[1],
-                    pipeline,
-                    window_pipeline,
-                    state,
-                    second,
-                );
+                // Each half grows by its share from nothing, so the ratio holds whatever the content
+                let half = |node: Node<S>, share: f32| {
+                    div()
+                        .basis(0.0)
+                        .grow(share)
+                        .min_w(0.0)
+                        .min_h(0.0)
+                        .flex_col()
+                        .child(node.flex_1())
+                };
+
+                let first = self.view_child(children[0], leaf, first);
+                let second = self.view_child(children[1], leaf, second);
+                let split = div().flex_1().min_w(0.0).min_h(0.0);
+                let split = match direction {
+                    Direction::Horizontal => split.flex_row(),
+                    Direction::Vertical => split.flex_col(),
+                };
+
+                split
+                    .child(half(first, ratio))
+                    .child(half(second, 1.0 - ratio))
             }
         }
     }
 
     /// Finds the leaf window whose last-rendered rect contains `point`
-    pub fn locate(&self, point: Position) -> Option<(LeafId, Rect)> {
+    pub fn locate(&self, point: Point) -> Option<(LeafId, Rect)> {
         self.leaves.iter().find_map(|(&id, entry)| {
             let rect = entry.window.rect()?;
             rect.contains(point).then_some((id, rect))
@@ -409,7 +370,7 @@ impl WindowLayout {
         storage: &buffer::Storage,
         pipeline: &mut Pipeline<S>,
         state: &mut S,
-        point: Position,
+        point: Point,
     ) -> Option<(LeafId, buffer::ID, buffer::HitPosition)> {
         let (leaf, _) = self.locate(point)?;
         let window = &self.leaves[&leaf].window;
@@ -423,7 +384,7 @@ impl WindowLayout {
         Some((leaf, id, pos))
     }
 
-    /// Screen cell for a line and column in a window's selected buffer
+    /// Top left of a line and column in a window's selected buffer
     pub fn cell_of<S>(
         &self,
         leaf: LeafId,
@@ -431,7 +392,7 @@ impl WindowLayout {
         pipeline: &mut Pipeline<S>,
         state: &mut S,
         pos: (usize, usize),
-    ) -> Option<Position> {
+    ) -> Option<Point> {
         self.leaves
             .get(&leaf)?
             .window
@@ -475,7 +436,7 @@ mod test {
         let mut layout = WindowLayout::new(bus);
         let first = layout.active_id();
 
-        let second = layout.split(layout::Direction::Horizontal);
+        let second = layout.split(Direction::Horizontal);
         assert_eq!(focus_events(&mut rx), [(first, second)]);
 
         layout.focus(second);
@@ -517,7 +478,7 @@ mod test {
         let first = layout.active_id();
         layout.active_mut().select(id.clone());
 
-        let second = layout.split(layout::Direction::Horizontal);
+        let second = layout.split(Direction::Horizontal);
         layout.active_mut().select(id);
 
         layout.window_mut(first).unwrap().scroll_by(5, 10);
@@ -530,7 +491,7 @@ mod test {
     #[test]
     pub fn shown_scroll_overrides_the_target() {
         let mut window = Window::new();
-        window.select(buffer::ID::Widget(0));
+        window.select(buffer::ID::scratch("missing"));
 
         window.scroll_by(3, 10);
         window.view_mut().unwrap().scroll.shown = Some(1);

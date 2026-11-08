@@ -44,7 +44,6 @@ pub enum Buffer {
         /// Ticket of the running background parse
         parse_ticket: Option<u64>,
     },
-    Widget(ratatui::buffer::Buffer),
 }
 
 impl From<text::BufferEntry> for Buffer {
@@ -97,15 +96,10 @@ pub struct ParsedTree {
 }
 
 impl Buffer {
-    /// Creates a new index for the Buffer given an incrementable index
-    pub fn create_index(&self, tracker: &mut usize) -> ID {
+    /// Returns the index for the Buffer
+    pub fn create_index(&self) -> ID {
         match self {
             Self::Text { id, .. } => ID::Text(id.clone()),
-            Self::Widget(_) => {
-                let id = ID::Widget(*tracker);
-                *tracker += 1;
-                id
-            }
         }
     }
 
@@ -113,7 +107,6 @@ impl Buffer {
     pub fn version(&self) -> u128 {
         match self {
             Self::Text { buf, .. } => buf.buffer.version(),
-            Self::Widget(_) => 0,
         }
     }
 
@@ -171,10 +164,7 @@ impl Buffer {
             parsed_version,
             parse_ticket,
             ..
-        } = self
-        else {
-            return Ok(());
-        };
+        } = self;
 
         if *parse_ticket != Some(ticket) {
             return Ok(());
@@ -220,8 +210,6 @@ impl Buffer {
 
                 Ok(())
             }
-
-            Self::Widget(_) => Ok(()),
         }
     }
 
@@ -232,8 +220,8 @@ impl Buffer {
         &self,
         pipeline: &mut Pipeline<S>,
         state: &mut S,
-        frame: &mut ratatui::Frame<'_>,
-        rect: ratatui::layout::Rect,
+        painter: &mut kui::Painter<'_>,
+        rect: kui::Rect,
         scroll_top: usize,
     ) -> Viewport {
         match self {
@@ -248,13 +236,12 @@ impl Buffer {
                     cursors: carets,
                     tree: tree.as_ref(),
                     area: rect,
-                    buf: frame.buffer_mut(),
+                    painter,
 
                     state,
                     primary,
                 })
             }
-            Self::Widget(_) => Viewport::default(),
         }
     }
 
@@ -263,9 +250,9 @@ impl Buffer {
         &self,
         pipeline: &mut Pipeline<S>,
         state: &mut S,
-        rect: ratatui::layout::Rect,
+        rect: kui::Rect,
         scroll_top: usize,
-        point: ratatui::layout::Position,
+        point: kui::Point,
     ) -> Option<HitPosition> {
         match self {
             Self::Text {
@@ -291,19 +278,18 @@ impl Buffer {
                     chr: buf.buffer.line_col_to_char(line, col),
                 })
             }
-            Self::Widget(_) => None,
         }
     }
 
-    /// Screen cell for a line and column, None when it is off screen
+    /// Top left of a line and column on screen, None when it is off screen
     pub fn cell_of<S>(
         &self,
         pipeline: &mut Pipeline<S>,
         state: &mut S,
-        rect: ratatui::layout::Rect,
+        rect: kui::Rect,
         scroll_top: usize,
         (line, col): (usize, usize),
-    ) -> Option<ratatui::layout::Position> {
+    ) -> Option<kui::Point> {
         match self {
             Self::Text {
                 buf, cursors, tree, ..
@@ -318,7 +304,6 @@ impl Buffer {
                 line,
                 col,
             }),
-            Self::Widget(_) => None,
         }
     }
 
@@ -328,7 +313,6 @@ impl Buffer {
     pub fn as_text<'a>(&'a mut self) -> Option<BoundCursorSet<'a>> {
         match self {
             Self::Text { buf, cursors, .. } => Some(cursors.bind(&mut buf.buffer)),
-            Self::Widget(_) => None,
         }
     }
 }
@@ -337,7 +321,6 @@ impl Buffer {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ID {
     Text(kwark_text::BufferKind),
-    Widget(usize),
 }
 
 impl ID {
@@ -350,11 +333,6 @@ impl ID {
     pub fn file(path: impl Into<PathBuf>) -> Self {
         Self::Text(BufferKind::File(path.into()))
     }
-
-    /// Creates a new ID for a widget buffer with the given name
-    pub fn widget(id: usize) -> Self {
-        Self::Widget(id)
-    }
 }
 
 impl Display for ID {
@@ -364,7 +342,6 @@ impl Display for ID {
             "{}",
             match self {
                 Self::Text(t) => t.to_string(),
-                Self::Widget(i) => i.to_string(),
             }
         )
     }
@@ -391,7 +368,6 @@ pub struct BufferClosed {
 
 /// A basic storage for a list of Buffers
 pub struct Storage {
-    next_id: usize,
     inner: HashMap<ID, Buffer>,
 
     /// The text version last reported for each buffer
@@ -403,7 +379,6 @@ impl Storage {
     /// Creates an empty storage
     pub fn new(bus: EventSender) -> Self {
         Self {
-            next_id: 0,
             inner: HashMap::new(),
             reported: HashMap::new(),
             bus,
@@ -463,7 +438,7 @@ impl Storage {
         }
 
         let buf = creator().into();
-        let id = buf.create_index(&mut self.next_id);
+        let id = buf.create_index();
 
         self.put(id.clone(), buf);
 
@@ -478,7 +453,7 @@ impl Storage {
     /// Creates a new buffer with the given ID, trashes the old buffer if the ID already existed
     pub fn insert(&mut self, buf: impl Into<Buffer>) -> ID {
         let buf = buf.into();
-        let id = buf.create_index(&mut self.next_id);
+        let id = buf.create_index();
 
         self.put(id.clone(), buf);
 
@@ -671,9 +646,7 @@ mod test {
     }
 
     fn insert(buf: &mut Buffer, line: usize, text: &str) {
-        let Buffer::Text { buf, .. } = buf else {
-            unreachable!()
-        };
+        let Buffer::Text { buf, .. } = buf;
         buf.buffer.insert(line, 0, text).unwrap();
     }
 

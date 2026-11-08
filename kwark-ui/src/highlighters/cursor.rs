@@ -1,6 +1,13 @@
+use kui::Color;
+use kwark_core::prelude::render::*;
 use kwark_core::prelude::*;
-use ratatui::style::{Color, Modifier, Style};
-use render::*;
+use kwark_theme::Style;
+
+const CARET_BG: Color = Color::rgb(0xF5E0DC);
+const CARET_FG: Color = Color::rgb(0x1E1E2E);
+const ALL_BG: Color = Color::rgb(0x89B4FA);
+const OTHER_BG: Color = Color::rgb(0x585B70);
+const SELECTION_BG: Color = Color::rgb(0x45475A);
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct CursorTag;
@@ -18,17 +25,21 @@ impl<S: 'static> Highlighter<Editor<S>> for Cursor {
 
         let mut spans = vec![];
 
+        let themed = state.core.theme.get("cursor.primary");
+        let primary = Style::new().bg(CARET_BG).fg(CARET_FG).patch(themed);
+        let selection = Style::new()
+            .bg(SELECTION_BG)
+            .patch(state.core.theme.get("cursor.selection"));
+
         for (i, cursor) in ctx.cursors.iter().enumerate() {
             let caret = cursor.caret();
 
             let caret_style = if i == ctx.primary {
-                Style::default().add_modifier(Modifier::REVERSED)
+                primary
+            } else if is_all {
+                Style::new().bg(ALL_BG).fg(CARET_FG)
             } else {
-                if is_all {
-                    Style::default().bg(Color::Blue).fg(Color::White)
-                } else {
-                    Style::default().bg(Color::DarkGray)
-                }
+                Style::new().bg(OTHER_BG)
             };
 
             let on_empty_line = len == 0 && caret == line_start;
@@ -53,7 +64,7 @@ impl<S: 'static> Highlighter<Editor<S>> for Cursor {
             if cursor.start() != cursor.end() && sel_start < sel_end {
                 spans.push(StyleSpan {
                     range: sel_start - line_start..sel_end - line_start,
-                    style: Style::default().bg(Color::Green),
+                    style: selection,
                 });
             }
         }

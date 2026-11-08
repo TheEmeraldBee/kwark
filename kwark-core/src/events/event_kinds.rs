@@ -24,11 +24,11 @@ pub struct MouseDrag;
 #[derive(Debug, Clone, Copy)]
 pub struct MouseUp;
 
-/// An event when the terminal changes size
+/// An event when the window changes size, in logical pixels
 #[derive(Debug, Clone, Copy)]
 pub struct Resize {
-    pub width: u16,
-    pub height: u16,
+    pub width: f32,
+    pub height: f32,
 }
 
 /// An event before each frame draws

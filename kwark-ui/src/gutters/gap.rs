@@ -1,8 +1,9 @@
-use kwark_render::Gutter;
-use ratatui::widgets::{Paragraph, Widget};
+use kui::{Painter, Rect};
+use kwark_render::{Gutter, Highlight, LineCtx, Metrics};
 
 use kwark_core::Editor;
 
+/// Empty space some characters wide
 pub struct Gap(pub u16);
 
 impl Default for Gap {
@@ -12,21 +13,20 @@ impl Default for Gap {
 }
 
 impl<S: 'static> Gutter<Editor<S>> for Gap {
-    fn width(&self) -> u16 {
-        self.0
+    fn width(&self, metrics: &Metrics) -> f32 {
+        f32::from(self.0) * metrics.char_width
     }
 
     fn render(
         &mut self,
         state: &mut Editor<S>,
-        _ctx: &kwark_render::LineCtx,
-        _hl: &kwark_render::Highlight,
-        area: ratatui::prelude::Rect,
-        buf: &mut ratatui::prelude::Buffer,
+        _ctx: &LineCtx,
+        _hl: &Highlight,
+        area: Rect,
+        p: &mut Painter,
     ) {
-        let style = state.core.theme.get("gutter.gap");
-        Paragraph::new("  ".repeat(self.0 as usize))
-            .style(style)
-            .render(area, buf);
+        if let Some(bg) = state.core.theme.get("gutter.gap").bg {
+            p.fill(area, bg);
+        }
     }
 }

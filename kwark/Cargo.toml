@@ -19,12 +19,10 @@ kwark-window.workspace = true
 
 anyhow.workspace = true
 
-# Terminal
+# Interface
 
-crossterm.workspace = true
-ratatui.workspace = true
+kui.workspace = true
 
 # Async
 
-futures-util.workspace = true
 tokio.workspace = true

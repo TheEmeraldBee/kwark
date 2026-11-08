@@ -2,10 +2,10 @@ use std::{collections::HashMap, rc::Rc};
 
 use kwark_bus::EventSender;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-
+mod key;
 mod parse;
 
+pub use key::{KeyCode, KeyModifiers, MouseButton};
 pub use parse::{ParseError, parse_chord};
 
 /// The origin of a [`Chord`]: a key press, a mouse button, or a scroll tick
@@ -35,32 +35,6 @@ impl Chord {
             },
             _ => Self { code, mods },
         }
-    }
-}
-
-impl From<KeyEvent> for Chord {
-    fn from(event: KeyEvent) -> Self {
-        Self::new(Code::Key(event.code), event.modifiers)
-    }
-}
-
-/// Fails for move, drag, and release, which have no key-press equivalent to bind
-impl TryFrom<MouseEvent> for Chord {
-    type Error = ();
-
-    fn try_from(event: MouseEvent) -> Result<Self, ()> {
-        let code = match event.kind {
-            MouseEventKind::Down(button) => Code::Mouse(button),
-            MouseEventKind::ScrollUp => Code::ScrollUp,
-            MouseEventKind::ScrollDown => Code::ScrollDown,
-            MouseEventKind::ScrollLeft => Code::ScrollLeft,
-            MouseEventKind::ScrollRight => Code::ScrollRight,
-            MouseEventKind::Up(_) | MouseEventKind::Drag(_) | MouseEventKind::Moved => {
-                return Err(());
-            }
-        };
-
-        Ok(Self::new(code, event.modifiers))
     }
 }
 
@@ -97,7 +71,6 @@ impl std::fmt::Display for Chord {
             Code::Key(KeyCode::Left) => write!(f, "left"),
             Code::Key(KeyCode::Right) => write!(f, "right"),
             Code::Key(KeyCode::F(n)) => write!(f, "f{n}"),
-            Code::Key(other) => write!(f, "{other:?}"),
             Code::Mouse(MouseButton::Left) => write!(f, "mouse_1"),
             Code::Mouse(MouseButton::Right) => write!(f, "mouse_2"),
             Code::Mouse(MouseButton::Middle) => write!(f, "mouse_3"),

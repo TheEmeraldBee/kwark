@@ -11,7 +11,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 kwark = { path = "../../kwark", version = "0.0.0" }
-ratatui.workspace = true
 
 # Tree Sitter languages
 tree-sitter-rust = "0.24.2"

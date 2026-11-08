@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use ratatui::layout::Direction;
+use kwark_window::Direction;
 
 /// A screen direction
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

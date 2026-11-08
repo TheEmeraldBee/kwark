@@ -1,8 +1,5 @@
+use kui::{Node, div, text};
 use kwark_render::Element;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Widget};
 
 use kwark_core::Editor;
 use kwark_window::WindowCtx;
@@ -11,42 +8,27 @@ use kwark_window::WindowCtx;
 pub struct Tabs;
 
 impl<S: 'static> Element<Editor<S>, WindowCtx> for Tabs {
-    fn width(&mut self, _state: &mut Editor<S>, _ctx: &WindowCtx, available: u16) -> u16 {
-        available
-    }
-
-    fn render(&mut self, state: &mut Editor<S>, ctx: &WindowCtx, area: Rect, buf: &mut Buffer) {
+    fn view(&mut self, state: &mut Editor<S>, ctx: &WindowCtx) -> Option<Node<Editor<S>>> {
         let theme = &state.core.theme;
 
-        let border_style = match ctx.active {
+        let border = match ctx.active {
             true => theme.get("bar.window.selected"),
             false => theme.get("bar.window"),
         };
+        let primary = theme.get("bar.tab.primary");
+        let tab = theme.get("bar.tab");
 
-        let primary_tab_style = theme.get("bar.tab.primary");
-        let tab_style = theme.get("bar.tab");
+        let mut row = div().flex_row().child(border.apply(text(" --- ")));
 
-        let edge_span = Span::styled(" --- ", border_style);
-        let mut spans = vec![edge_span.clone()];
-
-        for tab in &ctx.tabs {
-            if tab.primary {
-                spans.push(Span::styled(tab.name.clone(), primary_tab_style));
-            } else {
-                spans.push(Span::styled(tab.name.clone(), tab_style));
+        for (i, t) in ctx.tabs.iter().enumerate() {
+            if i > 0 {
+                row = row.child(border.apply(text(" - ")));
             }
 
-            spans.push(Span::styled(" - ", border_style));
+            let style = if t.primary { primary } else { tab };
+            row = row.child(style.apply(text(t.name.clone())));
         }
 
-        if spans.len() > 1 {
-            spans.pop();
-        }
-
-        spans.push(edge_span);
-
-        Paragraph::new(Line::from_iter(spans))
-            .centered()
-            .render(area, buf);
+        Some(row.child(border.apply(text(" --- "))))
     }
 }

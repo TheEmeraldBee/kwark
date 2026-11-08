@@ -1,14 +1,14 @@
 use std::time::{Duration, Instant};
 
+use kui::{Node, text};
 use kwark_render::Element;
-use ratatui::widgets::{Paragraph, Widget};
 
 use kwark_core::Editor;
 
 const GLYPHS: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const STEP: Duration = Duration::from_millis(80);
 
-/// A spinner shown while background tasks run
+/// A spinner that turns while background tasks run
 pub struct Spinner {
     start: Instant,
 }
@@ -28,37 +28,14 @@ impl Default for Spinner {
 }
 
 impl<S: 'static, C> Element<Editor<S>, C> for Spinner {
-    fn width(&mut self, state: &mut Editor<S>, _ctx: &C, _available: u16) -> u16 {
-        match state.core.tasks.busy() {
-            true => 1,
-            false => 1,
-        }
-    }
-
-    fn render(
-        &mut self,
-        state: &mut Editor<S>,
-        _ctx: &C,
-        area: ratatui::prelude::Rect,
-        buf: &mut ratatui::prelude::Buffer,
-    ) {
+    fn view(&mut self, state: &mut Editor<S>, _ctx: &C) -> Option<Node<Editor<S>>> {
         let step = (self.start.elapsed().as_millis() / STEP.as_millis()) as u32;
 
-        if !state.core.tasks.busy() {
-            let style = state.core.theme.get("bar.spinner");
-            Paragraph::new(format!("{} ", GLYPHS[step as usize % GLYPHS.len()]))
-                .style(style)
-                .render(area, buf);
-            return;
+        if state.core.tasks.busy() {
+            state.core.redraw.request_at(self.start + STEP * (step + 1));
         }
 
-        let next = self.start + STEP * (step + 1);
-
-        state.core.redraw.request_at(next);
-
-        let style = state.core.theme.get("bar.spinner");
-        Paragraph::new(format!("{} ", GLYPHS[step as usize % GLYPHS.len()]))
-            .style(style)
-            .render(area, buf);
+        let glyph = format!("{} ", GLYPHS[step as usize % GLYPHS.len()]);
+        Some(state.core.theme.get("bar.spinner").apply(text(glyph)))
     }
 }

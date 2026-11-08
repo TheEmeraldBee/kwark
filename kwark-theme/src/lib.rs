@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use ratatui::style::Style;
+mod style;
+
+pub use style::Style;
 
 /// A set of styles for given names that are split up by `.` characters
 #[derive(Default, Clone)]

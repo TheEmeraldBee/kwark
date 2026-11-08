@@ -7,8 +7,7 @@ license.workspace = true
 [dependencies]
 kwark-text.workspace = true
 kwark-tree-sitter.workspace = true
+kwark-theme.workspace = true
+kui.workspace = true
 
-ratatui.workspace = true
 ropey = "1.6.1"
-unicode-segmentation = "1.13.3"
-unicode-width = "0.2.2"

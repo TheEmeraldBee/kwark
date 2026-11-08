@@ -1,5 +1,4 @@
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use kui::{Edges, Painter, Rect};
 
 /// Marks which sides of a window sit against another pane
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -12,6 +11,9 @@ pub struct Boundaries {
 
 /// Draws a window's frame
 pub trait Border<S, C> {
-    /// Draws the frame and returns the rect left over
-    fn render(&mut self, state: &mut S, ctx: &C, area: Rect, buf: &mut Buffer) -> Rect;
+    /// Returns the space the frame takes on each side of the window
+    fn insets(&mut self, state: &mut S, ctx: &C) -> Edges;
+
+    /// Draws the frame over the whole window rect
+    fn render(&mut self, state: &mut S, ctx: &C, area: Rect, p: &mut Painter);
 }

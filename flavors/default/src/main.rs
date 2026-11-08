@@ -1,8 +1,3 @@
-use std::{
-    path::PathBuf,
-    process::{Command, Stdio},
-};
-
 use kwark::prelude::*;
 use kwark::{
     plugins::{
@@ -13,14 +8,7 @@ use kwark::{
         movement::{self, Motion},
         window,
     },
-    prelude::{
-        text::{BoundCursorSet, BufferEntry},
-        tree_sitter::LanguageStore,
-    },
-};
-use ratatui::{
-    layout::{Direction, Position},
-    widgets::BorderType,
+    prelude::{text::BoundCursorSet, tree_sitter::LanguageStore},
 };
 
 mod theme;
@@ -58,19 +46,6 @@ fn commit_changes(e: &mut Editor) {
     buf.commit_change();
 }
 
-/// Opens a file in the active window
-fn open_file(e: &mut Editor, path: PathBuf) {
-    e.spawn_blocking(
-        move || BufferEntry::new_file(path),
-        |e, buf| {
-            let id = e.core.buffers.insert(buf?);
-            e.core.windows.active_mut().select(id);
-
-            Ok(())
-        },
-    );
-}
-
 fn buffer_len_lines(storage: &buffer::Storage, id: &buffer::ID) -> usize {
     match storage.get(id) {
         Some(buffer::Buffer::Text { buf, .. }) => buf.buffer.rope().len_lines(),
@@ -95,10 +70,7 @@ fn scroll_window(e: &mut Editor, leaf: LeafId, delta: isize) {
 
 fn create_scroll(delta: isize) -> impl Fn(&mut Editor) -> anyhow::Result<()> {
     move |e: &mut Editor| {
-        let pos = e.core.mouse;
-        let point = Position::new(pos.column, pos.row);
-
-        let Some((leaf, _)) = e.core.windows.locate(point) else {
+        let Some((leaf, _)) = e.core.windows.locate(e.core.mouse) else {
             return Ok(());
         };
 
@@ -151,67 +123,6 @@ fn main() -> anyhow::Result<()> {
         normal.bind(&["scroll_up"], "", create_scroll(-3))?;
 
         normal.bind(&["scroll_down"], "", create_scroll(3))?;
-
-        normal.group(&["space"], "General Actions", |g| {
-            g.group(&["f"], "File Pickers", |g| {
-                g.bind(&["f"], "Open FZF file picker", |e| {
-                    e.suspend(|e| {
-                        let out = String::from_utf8_lossy(
-                            &Command::new("sh")
-                                .args(["-c", "find \"$PWD\" -type f | fzf"])
-                                .stdout(Stdio::piped())
-                                .spawn()?
-                                .wait_with_output()?
-                                .stdout,
-                        )
-                        .to_string();
-
-                        if out.trim().is_empty() {
-                            return Ok(());
-                        }
-
-                        open_file(e, out.trim().into());
-
-                        Ok(())
-                    });
-
-                    Ok(())
-                })?;
-
-                g.bind(&["t"], "Open YAZI file picker", |e| {
-                    e.suspend(|e| {
-                        let _ = std::fs::remove_file("/tmp/chooser");
-                        Command::new("yazi")
-                            .args(["--chooser-file", "/tmp/chooser"])
-                            .spawn()?
-                            .wait()?;
-
-                        let lines = std::fs::read_to_string("/tmp/chooser")?
-                            .split("\n")
-                            .filter_map(|x| {
-                                let out = x.trim().to_string();
-                                if out.is_empty() { None } else { Some(out) }
-                            })
-                            .collect::<Vec<_>>();
-
-                        for file in lines {
-                            let path = PathBuf::from(file).canonicalize()?;
-                            if !path.is_file() {
-                                continue;
-                            }
-
-                            open_file(e, path);
-                        }
-
-                        Ok(())
-                    });
-
-                    Ok(())
-                })?;
-
-                Ok(())
-            })
-        })?;
 
         normal.group(&["g"], "Goto Prefix", |g| {
             g.bind(&["p"], "Goto Previous Buffer in Window", |e| {
@@ -515,7 +426,7 @@ fn main() -> anyhow::Result<()> {
     editor
         .core
         .window_pipeline
-        .set_border(ui::borders::LowProfile(BorderType::Thick));
+        .set_border(ui::borders::LowProfile(2.0));
 
     editor
         .core

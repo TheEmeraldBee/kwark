@@ -1,7 +1,6 @@
 extern crate self as kwark;
 
 mod run;
-mod terminal;
 
 pub mod prelude;
 

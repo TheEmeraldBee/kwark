@@ -1,8 +1,8 @@
 mod status_line;
 pub use status_line::*;
 
-use crossterm::event::{KeyCode, KeyModifiers};
 use kwark_input::Code;
+use kwark_input::{KeyCode, KeyModifiers};
 
 use kwark_core::{Editor, Has, PluginState};
 

@@ -1,11 +1,11 @@
 use std::any::{Any, TypeId};
 
+use kui::Point;
 use kwark_bus::{EventReceiver, EventSender, Message};
 use kwark_text::CursorOptions;
 use kwark_theme::Theme;
 use kwark_tree_sitter::store::LanguageStore;
 use kwark_window::{LeafId, WindowCtx, WindowLayout};
-use ratatui::{DefaultTerminal, Frame, layout::Position};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 use crate::{
@@ -14,7 +14,6 @@ use crate::{
     events::EventStorage,
     frame::{FrameInfo, Redraw},
     log::LogState,
-    suspend::SuspendQueue,
     tasks::Tasks,
     timers::Timers,
 };
@@ -59,7 +58,8 @@ pub struct Core<S: 'static> {
     pub theme: Theme,
     pub flags: Flags,
     pub log: LogState,
-    pub mouse: MousePosition,
+    /// The pointer position of the most recent mouse event, read by chords bound to a mouse press
+    pub mouse: Point,
     pub running: Running,
 
     pub pipeline: Pipeline<S>,
@@ -69,7 +69,6 @@ pub struct Core<S: 'static> {
 
     pub timers: Timers<Editor<S>>,
     pub tasks: Tasks,
-    pub suspend: SuspendQueue<Editor<S>>,
     pub redraw: Redraw,
     pub frame: FrameInfo,
 }
@@ -86,7 +85,7 @@ impl<S: 'static> Core<S> {
             theme: Theme::default(),
             flags: Flags::default(),
             log: LogState::default(),
-            mouse: MousePosition::default(),
+            mouse: Point::default(),
             running: Running(true),
 
             pipeline: Pipeline::default(),
@@ -96,7 +95,6 @@ impl<S: 'static> Core<S> {
 
             timers: Timers::default(),
             tasks: Tasks::default(),
-            suspend: SuspendQueue::default(),
             redraw: Redraw::default(),
             frame: FrameInfo::default(),
         }
@@ -114,13 +112,29 @@ pub struct Senders<S: 'static> {
     pub bus: EventSender,
 }
 
-/// The terminal, channels, and runtime owned by the editor
+/// The channels and runtime owned by the editor
 struct Io<S: 'static> {
-    term: Option<DefaultTerminal>,
     runtime: tokio::runtime::Runtime,
     senders: Senders<S>,
+    /// The receivers, until a main loop takes them
+    inbox: Option<Inbox<S>>,
+}
+
+/// The receiving ends of the callback channel and the event bus
+pub struct Inbox<S: 'static> {
     callback_rx: UnboundedReceiver<Callback<S>>,
     bus_rx: EventReceiver,
+}
+
+impl<S: 'static> Inbox<S> {
+    /// Waits for the next callback or bus event, None once every sender is gone
+    pub async fn recv(&mut self) -> Option<Incoming<S>> {
+        tokio::select! {
+            Some(callback) = self.callback_rx.recv() => Some(Incoming::Callback(callback)),
+            Some(event) = self.bus_rx.recv() => Some(Incoming::Event(event)),
+            else => None,
+        }
+    }
 }
 
 impl<S: 'static> Editor<S> {
@@ -147,11 +161,12 @@ impl<S: 'static> Editor<S> {
             events: EventStorage::default(),
 
             io: Io {
-                term: None,
                 runtime,
                 senders,
-                callback_rx,
-                bus_rx,
+                inbox: Some(Inbox {
+                    callback_rx,
+                    bus_rx,
+                }),
             },
         };
 
@@ -177,13 +192,9 @@ impl<S: 'static> Editor<S> {
         self.io.runtime.handle()
     }
 
-    /// Waits for the next callback or bus event
-    pub async fn recv(&mut self) -> Option<Incoming<S>> {
-        tokio::select! {
-            Some(callback) = self.io.callback_rx.recv() => Some(Incoming::Callback(callback)),
-            Some(event) = self.io.bus_rx.recv() => Some(Incoming::Event(event)),
-            else => None,
-        }
+    /// Takes the receivers for a main loop to wait on, None if one already did
+    pub fn take_inbox(&mut self) -> Option<Inbox<S>> {
+        self.io.inbox.take()
     }
 
     /// Runs a callback or the subscribers for a bus event
@@ -196,12 +207,12 @@ impl<S: 'static> Editor<S> {
 
     /// Returns the next callback that is already queued
     pub fn try_recv_callback(&mut self) -> Option<Callback<S>> {
-        self.io.callback_rx.try_recv().ok()
+        self.io.inbox.as_mut()?.callback_rx.try_recv().ok()
     }
 
     /// Returns the next event on the bus that is already queued
     pub fn try_recv_event(&mut self) -> Option<Message> {
-        self.io.bus_rx.try_recv()
+        self.io.inbox.as_mut()?.bus_rx.try_recv()
     }
 
     /// Runs a single callback
@@ -212,38 +223,13 @@ impl<S: 'static> Editor<S> {
         }
     }
 
-    pub fn set_term(&mut self, term: DefaultTerminal) {
-        self.io.term = Some(term)
-    }
-
-    pub fn term(&mut self) -> &mut DefaultTerminal {
-        self.io
-            .term
-            .as_mut()
-            .expect("terminal should exist when it's accessed")
-    }
-
-    /// Draws a single frame
-    pub fn draw(&mut self, func: impl FnOnce(&mut Frame, &mut Self)) -> anyhow::Result<()> {
-        let mut term = self
-            .io
-            .term
-            .take()
-            .expect("terminal should exist when it's accessed");
-
-        let res = term.draw(|frame| func(frame, self)).map(|_| ());
-
-        self.io.term = Some(term);
-
-        res?;
-
-        Ok(())
-    }
-
     /// Runs `f` with the layout, buffers, and render pipelines lent out of the editor
     pub fn with_view<R>(&mut self, f: impl FnOnce(&mut View<S>, &mut Self) -> R) -> R {
         // Placeholders stay detached from the real bus
         let detached = kwark_bus::channel().0;
+
+        // The stand-in keeps the metrics, so code that runs meanwhile measures the same way
+        let stand_in = Pipeline::new(self.core.pipeline.metrics.clone());
 
         let mut view = View {
             buffers: std::mem::replace(
@@ -251,7 +237,7 @@ impl<S: 'static> Editor<S> {
                 kwark_buffer::Storage::new(detached.clone()),
             ),
             windows: std::mem::replace(&mut self.core.windows, WindowLayout::new(detached)),
-            pipeline: std::mem::take(&mut self.core.pipeline),
+            pipeline: std::mem::replace(&mut self.core.pipeline, stand_in),
             window_pipeline: std::mem::take(&mut self.core.window_pipeline),
             editor_pipeline: std::mem::take(&mut self.core.editor_pipeline),
             overlays: std::mem::take(&mut self.core.overlays),
@@ -272,13 +258,13 @@ impl<S: 'static> Editor<S> {
     /// Returns the window, buffer, and text position under a screen point
     pub fn hit_test(
         &mut self,
-        point: Position,
+        point: Point,
     ) -> Option<(LeafId, kwark_buffer::ID, kwark_buffer::HitPosition)> {
         self.with_view(|v, e| v.windows.hit_test(&v.buffers, &mut v.pipeline, e, point))
     }
 
-    /// Returns the screen cell for a line and column in a window's selected buffer
-    pub fn cell_of(&mut self, leaf: LeafId, pos: (usize, usize)) -> Option<Position> {
+    /// Returns the top left on screen of a line and column in a window's selected buffer
+    pub fn cell_of(&mut self, leaf: LeafId, pos: (usize, usize)) -> Option<Point> {
         self.with_view(|v, e| v.windows.cell_of(leaf, &v.buffers, &mut v.pipeline, e, pos))
     }
 }
@@ -323,11 +309,4 @@ impl Running {
     pub fn quit(&mut self) {
         self.0 = false
     }
-}
-
-/// The screen position of the most recent mouse event, read by chords bound to a mouse press
-#[derive(Default, Clone, Copy)]
-pub struct MousePosition {
-    pub column: u16,
-    pub row: u16,
 }

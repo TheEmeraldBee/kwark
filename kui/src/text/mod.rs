@@ -1,7 +1,9 @@
 mod cache;
 mod layout;
 
+use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use parley::{
@@ -129,8 +131,45 @@ impl<'a> Span<'a> {
     }
 }
 
-/// The font database and the cache of shaped lines
-pub struct Fonts {
+/// The font database and the cache of shaped lines, shared by every clone
+#[derive(Clone, Default)]
+pub struct Fonts(Rc<RefCell<FontsInner>>);
+
+impl Fonts {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns the shaped line for a set of spans
+    pub fn line(&self, spans: &[Span]) -> Arc<TextLayout> {
+        let mut inner = self.0.borrow_mut();
+        if let Some(layout) = inner.cache.get(spans) {
+            return layout;
+        }
+
+        let layout = Arc::new(inner.shape(spans));
+        inner.cache.insert(spans, layout.clone());
+        layout
+    }
+
+    /// Returns the advance of one character in a monospace style
+    pub fn char_width(&self, style: &TextStyle) -> f32 {
+        self.line(&[Span::new("0", style.clone())]).width()
+    }
+
+    /// Returns the height of one line in a style
+    pub fn line_height(&self, style: &TextStyle) -> f32 {
+        self.line(&[Span::new(" ", style.clone())]).height()
+    }
+
+    /// Drops the lines that recent frames did not use
+    pub(crate) fn end_frame(&self) {
+        self.0.borrow_mut().cache.end_frame();
+    }
+}
+
+/// The parts of `Fonts` behind its shared handle
+struct FontsInner {
     fonts: FontContext,
     layouts: LayoutContext<Color>,
     cache: LineCache,
@@ -138,14 +177,8 @@ pub struct Fonts {
     text: String,
 }
 
-impl Default for Fonts {
+impl Default for FontsInner {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Fonts {
-    pub fn new() -> Self {
         Self {
             fonts: FontContext::new(),
             layouts: LayoutContext::new(),
@@ -153,33 +186,9 @@ impl Fonts {
             text: String::new(),
         }
     }
+}
 
-    /// Returns the shaped line for a set of spans
-    pub fn line(&mut self, spans: &[Span]) -> Arc<TextLayout> {
-        if let Some(layout) = self.cache.get(spans) {
-            return layout;
-        }
-
-        let layout = Arc::new(self.shape(spans));
-        self.cache.insert(spans, layout.clone());
-        layout
-    }
-
-    /// Returns the advance of one character in a monospace style
-    pub fn char_width(&mut self, style: &TextStyle) -> f32 {
-        self.line(&[Span::new("0", style.clone())]).width()
-    }
-
-    /// Returns the height of one line in a style
-    pub fn line_height(&mut self, style: &TextStyle) -> f32 {
-        self.line(&[Span::new(" ", style.clone())]).height()
-    }
-
-    /// Drops the lines that recent frames did not use
-    pub(crate) fn end_frame(&mut self) {
-        self.cache.end_frame();
-    }
-
+impl FontsInner {
     fn shape(&mut self, spans: &[Span]) -> TextLayout {
         self.text.clear();
         for span in spans {
@@ -232,7 +241,7 @@ mod test {
 
     #[test]
     fn hit_tests_map_columns_both_ways() {
-        let mut fonts = Fonts::new();
+        let fonts = Fonts::new();
         let style = TextStyle::default();
         let width = fonts.char_width(&style);
         let line = fonts.line(&[
@@ -255,7 +264,7 @@ mod test {
 
     #[test]
     fn same_spans_share_one_layout() {
-        let mut fonts = Fonts::new();
+        let fonts = Fonts::new();
         let spans = [Span::new("fn main() {}", TextStyle::default())];
 
         let a = fonts.line(&spans);

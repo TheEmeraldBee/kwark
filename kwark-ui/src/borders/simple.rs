@@ -1,34 +1,35 @@
+use kui::{Edges, Painter, Rect};
 use kwark_render::Border;
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use kwark_core::Editor;
 use kwark_window::WindowCtx;
 
-pub struct Simple(pub BorderType);
+/// An outline around the whole window
+pub struct Simple {
+    /// Line width in logical pixels
+    pub width: f32,
+    pub radius: f32,
+    /// Space between the line and the content
+    pub padding: f32,
+}
+
+impl Default for Simple {
+    fn default() -> Self {
+        Self {
+            width: 1.0,
+            radius: 6.0,
+            padding: 4.0,
+        }
+    }
+}
 
 impl<S: 'static> Border<Editor<S>, WindowCtx> for Simple {
-    fn render(
-        &mut self,
-        state: &mut Editor<S>,
-        ctx: &WindowCtx,
-        area: ratatui::prelude::Rect,
-        buf: &mut ratatui::prelude::Buffer,
-    ) -> ratatui::prelude::Rect {
-        let theme = &state.core.theme;
-        let style = match ctx.active {
-            true => theme.get("borders.active"),
-            false => theme.get("borders"),
-        };
+    fn insets(&mut self, _state: &mut Editor<S>, _ctx: &WindowCtx) -> Edges {
+        Edges::all(self.width + self.padding)
+    }
 
-        let block = Block::new()
-            .borders(Borders::ALL)
-            .border_type(self.0)
-            .style(style);
-
-        let out_area = block.inner(area);
-
-        block.render(area, buf);
-
-        out_area
+    fn render(&mut self, state: &mut Editor<S>, ctx: &WindowCtx, area: Rect, p: &mut Painter) {
+        let color = super::line_color(state, ctx);
+        p.stroke(area, self.radius, self.width, color);
     }
 }

@@ -1,15 +1,14 @@
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use kui::{Node, Rect};
 
 /// Something drawn over the whole frame after every window
 pub trait Overlay<S> {
-    /// Draws the overlay anywhere within `area`
-    fn render(&mut self, state: &mut S, area: Rect, buf: &mut Buffer);
+    /// Returns the tree for the overlay, placed anywhere within `area`, or None to show nothing
+    fn view(&mut self, state: &mut S, area: Rect) -> Option<Node<S>>;
 }
 
-impl<S, F: FnMut(&mut S, Rect, &mut Buffer)> Overlay<S> for F {
-    fn render(&mut self, state: &mut S, area: Rect, buf: &mut Buffer) {
-        self(state, area, buf)
+impl<S, F: FnMut(&mut S, Rect) -> Option<Node<S>>> Overlay<S> for F {
+    fn view(&mut self, state: &mut S, area: Rect) -> Option<Node<S>> {
+        self(state, area)
     }
 }
 
@@ -29,10 +28,11 @@ impl<S> Overlays<S> {
         self
     }
 
-    /// Draws every overlay to the buffer
-    pub fn render(&mut self, state: &mut S, area: Rect, buf: &mut Buffer) {
-        for o in &mut self.0 {
-            o.render(state, area, buf);
-        }
+    /// Returns the trees of every overlay that shows something, bottom first
+    pub fn view(&mut self, state: &mut S, area: Rect) -> Vec<Node<S>> {
+        self.0
+            .iter_mut()
+            .filter_map(|o| o.view(state, area))
+            .collect()
     }
 }

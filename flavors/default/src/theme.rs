@@ -1,27 +1,28 @@
-use kwark::prelude::Theme;
-use ratatui::style::{Color, Style};
+use kwark::prelude::{Color, Style, Theme};
 
 fn f(c: Color) -> Style {
     Style::new().fg(c)
 }
 
 pub fn init_theme(theme: &mut Theme) {
-    const ROSEWATER: Color = Color::from_u32(0x00F5E0DC);
-    const PINK: Color = Color::from_u32(0x00F5C2E7);
-    const MAUVE: Color = Color::from_u32(0x00CBA6F7);
-    const RED: Color = Color::from_u32(0x00F38BA8);
-    const MAROON: Color = Color::from_u32(0x00EBA0AC);
-    const PEACH: Color = Color::from_u32(0x00FAB387);
-    const YELLOW: Color = Color::from_u32(0x00F9E2AF);
-    const GREEN: Color = Color::from_u32(0x00A6E3A1);
-    const TEAL: Color = Color::from_u32(0x0094E2D5);
-    const SKY: Color = Color::from_u32(0x0089DCEB);
-    const SAPPHIRE: Color = Color::from_u32(0x0074C7EC);
-    const BLUE: Color = Color::from_u32(0x0089B4FA);
-    const LAVENDER: Color = Color::from_u32(0x00B4BEFE);
-    const TEXT: Color = Color::from_u32(0x00CDD6F4);
-    const TEXT_DARK: Color = Color::from_u32(0x00333654);
-    const OVERLAY2: Color = Color::from_u32(0x009399B2);
+    const ROSEWATER: Color = Color::rgb(0xF5E0DC);
+    const PINK: Color = Color::rgb(0xF5C2E7);
+    const MAUVE: Color = Color::rgb(0xCBA6F7);
+    const RED: Color = Color::rgb(0xF38BA8);
+    const MAROON: Color = Color::rgb(0xEBA0AC);
+    const PEACH: Color = Color::rgb(0xFAB387);
+    const YELLOW: Color = Color::rgb(0xF9E2AF);
+    const GREEN: Color = Color::rgb(0xA6E3A1);
+    const TEAL: Color = Color::rgb(0x94E2D5);
+    const SKY: Color = Color::rgb(0x89DCEB);
+    const SAPPHIRE: Color = Color::rgb(0x74C7EC);
+    const BLUE: Color = Color::rgb(0x89B4FA);
+    const LAVENDER: Color = Color::rgb(0xB4BEFE);
+    const TEXT: Color = Color::rgb(0xCDD6F4);
+    const TEXT_DARK: Color = Color::rgb(0x333654);
+    const OVERLAY2: Color = Color::rgb(0x9399B2);
+    const BASE: Color = Color::rgb(0x1E1E2E);
+    const MANTLE: Color = Color::rgb(0x181825);
 
     theme.set_all([
         ("ts.tag", f(BLUE)),
@@ -84,6 +85,13 @@ pub fn init_theme(theme: &mut Theme) {
         ("statusline.log.error", f(MAROON)),
         ("statusline.log.warn", f(RED)),
         ("statusline.log.info", f(SKY)),
+    ]);
+
+    theme.set_all([
+        ("background", Style::new().bg(BASE)),
+        ("text", f(TEXT)),
+        ("popup", f(TEXT).bg(MANTLE)),
+        ("popup.border", f(OVERLAY2)),
     ]);
 
     theme.set("freda", f(LAVENDER));

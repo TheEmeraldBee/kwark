@@ -1,40 +1,47 @@
+use kui::{Color, Node, Rect, div, text};
 use kwark_core::{Editor, INPUT_TREE_FLAG};
 use kwark_render::Overlay;
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    macros::{horizontal, vertical},
-    text::Line,
-    widgets::{Block, Borders, Clear, Paragraph, Widget},
-};
+
+/// Fallback colors for a theme without a popup style
+const FALLBACK_BG: Color = Color::rgb(0x181825);
+const FALLBACK_BORDER: Color = Color::rgb(0x45475A);
 
 /// A popup that lists the keys available at the current input step
 pub struct InputTreePopup;
 
 impl<S: 'static> Overlay<Editor<S>> for InputTreePopup {
-    fn render(&mut self, state: &mut Editor<S>, area: Rect, buf: &mut Buffer) {
-        let (input, flags) = (&state.core.input, &state.core.flags);
+    fn view(&mut self, state: &mut Editor<S>, _area: Rect) -> Option<Node<Editor<S>>> {
+        let (input, flags, theme) = (&state.core.input, &state.core.flags, &state.core.theme);
         if !flags.get(INPUT_TREE_FLAG) {
-            return;
+            return None;
         }
 
-        let lines = input
+        let lines: Vec<Node<Editor<S>>> = input
             .get_layer()
-            .iter()
+            .into_iter()
             .map(|(chord, desc)| {
-                Line::raw(format!(
-                    "{} : {desc}",
-                    chord.map(|x| x.to_string()).unwrap_or("any".to_string())
-                ))
+                let chord = chord.map_or("any".to_string(), |x| x.to_string());
+                text(format!("{chord} : {desc}"))
             })
-            .collect::<Vec<_>>();
+            .collect();
 
-        let vertical_layer = vertical![==80%, ==20%].split(area)[1];
-        let rect = horizontal![==60%, ==40%].split(vertical_layer)[1];
+        let style = theme.get("popup");
+        let border = theme.get("popup.border").fg.unwrap_or(FALLBACK_BORDER);
 
-        Clear.render(rect, buf);
-        Paragraph::new(lines)
-            .block(Block::new().borders(Borders::ALL))
-            .render(rect, buf);
+        let popup = div()
+            .absolute()
+            .right(8.0)
+            .bottom(8.0)
+            .w_frac(0.4)
+            .max_h(320.0)
+            .flex_col()
+            .p(8.0)
+            .rounded(6.0)
+            .bg(style.bg.unwrap_or(FALLBACK_BG))
+            .border(1.0, border)
+            .overflow_hidden()
+            .children(lines);
+
+        Some(style.apply(popup))
     }
 }

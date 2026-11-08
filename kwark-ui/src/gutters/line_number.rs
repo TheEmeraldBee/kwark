@@ -1,9 +1,10 @@
-use kwark_render::Gutter;
-use ratatui::widgets::{Paragraph, Widget};
+use kui::{Painter, Point, Rect, Span};
+use kwark_render::{Gutter, Highlight, LineCtx, Metrics};
 
 use kwark_core::Editor;
 
 pub struct LineNumber {
+    /// Width in characters
     pub max_width: u16,
     pub relative: bool,
 }
@@ -18,19 +19,19 @@ impl Default for LineNumber {
 }
 
 impl<S: 'static> Gutter<Editor<S>> for LineNumber {
-    fn width(&self) -> u16 {
-        self.max_width
+    fn width(&self, metrics: &Metrics) -> f32 {
+        f32::from(self.max_width) * metrics.char_width
     }
 
     fn render(
         &mut self,
         state: &mut Editor<S>,
-        ctx: &kwark_render::LineCtx,
-        _hl: &kwark_render::Highlight,
-        area: ratatui::prelude::Rect,
-        buf: &mut ratatui::prelude::Buffer,
+        ctx: &LineCtx,
+        _hl: &Highlight,
+        area: Rect,
+        p: &mut Painter,
     ) {
-        let line_theme = state.core.theme.get("gutter.line_number");
+        let style = state.core.theme.get("gutter.line_number");
 
         let line_num = if self.relative {
             let caret = ctx.cursors[ctx.primary].caret();
@@ -41,8 +42,14 @@ impl<S: 'static> Gutter<Editor<S>> for LineNumber {
             ctx.line + 1
         };
 
-        Paragraph::new(format!("{}", line_num))
-            .style(line_theme)
-            .render(area, buf);
+        let number = line_num.to_string();
+        let layout = ctx
+            .metrics
+            .fonts
+            .line(&[Span::new(&number, style.text(&ctx.metrics.text))]);
+
+        p.clip(area, |p| {
+            p.text(&layout, Point::new(area.left(), area.top()))
+        });
     }
 }

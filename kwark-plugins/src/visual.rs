@@ -1,8 +1,7 @@
 use std::time::Instant;
 
-use crossterm::event::MouseButton;
+use kwark_input::MouseButton;
 use kwark_text::CursorOptions;
-use ratatui::layout::Position;
 
 use kwark_core::{events, prelude::*};
 
@@ -74,8 +73,7 @@ impl MouseState {
 
 /// Focuses the clicked window and buffer, returning the buffer and the text position
 fn focus_click<S: 'static>(s: &mut Editor<S>) -> Option<(buffer::ID, buffer::HitPosition)> {
-    let pos = s.core.mouse;
-    let point = Position::new(pos.column, pos.row);
+    let point = s.core.mouse;
 
     let (leaf, id, hit) = s.hit_test(point)?;
 
@@ -164,8 +162,7 @@ fn register<S: Has<Plugin> + 'static>(editor: &mut Editor<S>) {
             return Ok(());
         }
 
-        let pos = s.core.mouse;
-        let point = Position::new(pos.column, pos.row);
+        let point = s.core.mouse;
         let mode = DragMode::from_click_count(s.plugin::<Plugin>().predicted_count());
 
         let anchor = s
@@ -184,8 +181,7 @@ fn register<S: Has<Plugin> + 'static>(editor: &mut Editor<S>) {
             return Ok(());
         };
 
-        let pos = s.core.mouse;
-        let point = Position::new(pos.column, pos.row);
+        let point = s.core.mouse;
 
         s.with_view(|v, state| {
             let View {
@@ -201,12 +197,13 @@ fn register<S: Has<Plugin> + 'static>(editor: &mut Editor<S>) {
                     _ => 0,
                 };
 
-                // Scroll faster the further the mouse has gone past the edge
-                let delta = if point.y < content_rect.y {
-                    let overshoot = (content_rect.y - point.y) as isize;
+                // Scroll faster the further the mouse has gone past the edge, in lines
+                let line_height = pipeline.metrics.line_height;
+                let delta = if point.y < content_rect.top() {
+                    let overshoot = ((content_rect.top() - point.y) / line_height) as isize;
                     Some(-(1 + overshoot / 2))
-                } else if point.y >= content_rect.y + content_rect.height {
-                    let overshoot = (point.y - (content_rect.y + content_rect.height - 1)) as isize;
+                } else if point.y >= content_rect.bottom() {
+                    let overshoot = ((point.y - content_rect.bottom()) / line_height) as isize;
                     Some(1 + overshoot / 2)
                 } else {
                     None

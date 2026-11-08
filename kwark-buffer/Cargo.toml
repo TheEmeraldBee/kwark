@@ -11,7 +11,7 @@ kwark-render.workspace = true
 kwark-tree-sitter.workspace = true
 
 ropey = "1.6.1"
-ratatui.workspace = true
+kui.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

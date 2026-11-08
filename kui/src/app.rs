@@ -4,7 +4,7 @@ use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event_loop::EventLoopProxy;
 use winit::window::Window;
 
-use crate::{Color, CursorIcon, Event, Fonts, Node, Rect, Size};
+use crate::{Color, CursorIcon, Event, Fonts, Mods, Node, Rect, Size};
 
 /// Options for the window that kui opens
 #[derive(Clone, Debug)]
@@ -32,6 +32,7 @@ pub struct Cx<'a> {
     pub(crate) window: &'a Window,
     pub(crate) size: Size,
     pub(crate) scale: f32,
+    pub(crate) mods: Mods,
     pub(crate) redraw: bool,
     pub(crate) quit: bool,
     pub(crate) keep_open: bool,
@@ -39,7 +40,7 @@ pub struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
-    pub(crate) fn new(fonts: &'a mut Fonts, window: &'a Window) -> Self {
+    pub(crate) fn new(fonts: &'a mut Fonts, window: &'a Window, mods: Mods) -> Self {
         let scale = window.scale_factor();
         let size = window.inner_size().to_logical::<f32>(scale);
 
@@ -48,6 +49,7 @@ impl<'a> Cx<'a> {
             window,
             size: Size::new(size.width, size.height),
             scale: scale as f32,
+            mods,
             redraw: false,
             quit: false,
             keep_open: false,
@@ -63,6 +65,11 @@ impl<'a> Cx<'a> {
     /// Returns the number of physical pixels in one logical pixel
     pub fn scale(&self) -> f32 {
         self.scale
+    }
+
+    /// Returns the modifier keys held now
+    pub fn mods(&self) -> Mods {
+        self.mods
     }
 
     pub fn fonts(&mut self) -> &mut Fonts {

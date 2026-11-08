@@ -1,27 +1,18 @@
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use kui::{Painter, Rect};
 
-use crate::{Highlight, LineCtx};
+use crate::{Highlight, LineCtx, Metrics};
 
 pub trait Gutter<S> {
-    /// Returns a requested width for the gutter
+    /// Returns the width of the gutter in logical pixels
     ///
     /// # IMPORTANT
-    /// This should **always** return a constant number
-    fn width(&self) -> u16;
+    /// This should return the same width for every line
+    fn width(&self, metrics: &Metrics) -> f32;
 
-    /// Render the gutter content for a given line
+    /// Draws the gutter for a given line
     ///
-    /// `area.width` will always be of width [`Self::width`]
-    /// `area.height` with always be of height [`crate::Renderer::claim`], with a default of `1`
-    fn render(
-        &mut self,
-        state: &mut S,
-        ctx: &LineCtx,
-        hl: &Highlight,
-        area: Rect,
-        buf: &mut Buffer,
-    );
+    /// `area.size.width` is always [`Self::width`] and `area.size.height` is the line's measured height
+    fn render(&mut self, state: &mut S, ctx: &LineCtx, hl: &Highlight, area: Rect, p: &mut Painter);
 }
 
 pub struct Gutters<S>(Vec<Box<dyn Gutter<S>>>);
@@ -39,28 +30,27 @@ impl<S> Gutters<S> {
         self
     }
 
-    /// Measures the total width of all gutters
-    pub fn measure(&self) -> u16 {
-        self.0.iter().map(|x| x.width()).sum()
+    /// Returns the total width of all gutters in logical pixels
+    pub fn measure(&self, metrics: &Metrics) -> f32 {
+        self.0.iter().map(|x| x.width(metrics)).sum()
     }
 
-    /// Renders a full set of gutters to the line's buffer
+    /// Draws every gutter for the line, left to right within `area`
     pub fn render(
         &mut self,
         state: &mut S,
         ctx: &LineCtx,
         hl: &Highlight,
         area: Rect,
-        buf: &mut Buffer,
-        renderer_height: u16,
+        p: &mut Painter,
     ) {
-        let mut x = area.x;
+        let mut x = area.left();
         for gutter in &mut self.0 {
-            let width = gutter.width();
-            let rect = Rect::new(x, area.y, width, renderer_height);
+            let width = gutter.width(ctx.metrics);
+            let rect = Rect::new(x, area.top(), width, area.size.height);
             x += width;
 
-            gutter.render(state, ctx, hl, rect, buf);
+            gutter.render(state, ctx, hl, rect, p);
         }
     }
 }

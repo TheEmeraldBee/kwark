@@ -3,12 +3,9 @@ pub use layout::*;
 
 use std::ops::{Deref, DerefMut};
 
+use kui::{Painter, Point, Rect};
 use kwark_buffer as buffer;
-use kwark_render::{Boundaries, Pipeline, Viewport, split_vertically};
-
-use ratatui::layout::Rect;
-use ratatui::prelude::*;
-use ratatui::widgets::{Clear, Widget};
+use kwark_render::{Boundaries, Pipeline, Viewport};
 
 pub type WindowPipeline<S> = kwark_render::WindowPipeline<S, WindowCtx>;
 
@@ -128,37 +125,22 @@ impl Window {
         self.view()?.viewport
     }
 
-    /// Screen cell for a line and column of the selected buffer, None when it is off screen
+    /// Top left of a line and column of the selected buffer, None when it is off screen
     pub fn cell_of<S>(
         &self,
         storage: &buffer::Storage,
         pipeline: &mut Pipeline<S>,
         state: &mut S,
         pos: (usize, usize),
-    ) -> Option<Position> {
+    ) -> Option<Point> {
         let rect = self.content_rect?;
         let buf = storage.get(&self.bufs.selected()?)?;
 
         buf.cell_of(pipeline, state, rect, self.scroll_shown(), pos)
     }
 
-    /// Renders the window's content
-    #[allow(clippy::too_many_arguments)]
-    pub fn render<S>(
-        &mut self,
-        storage: &buffer::Storage,
-        frame: &mut Frame<'_>,
-        rect: Rect,
-
-        pipeline: &mut Pipeline<S>,
-        window_pipeline: &mut WindowPipeline<S>,
-        state: &mut S,
-
-        is_active: bool,
-        boundaries: Boundaries,
-    ) {
-        self.rect = Some(rect);
-
+    /// Returns the context that the window's border and rows draw with
+    pub fn ctx(&self, active: bool, boundaries: Boundaries) -> WindowCtx {
         let tabs = self
             .bufs
             .iter()
@@ -167,42 +149,29 @@ impl Window {
                 primary,
             })
             .collect();
-        let ctx = WindowCtx {
-            active: is_active,
+
+        WindowCtx {
+            active,
             boundaries,
             tabs,
-        };
-
-        let inner = {
-            let screen = frame.buffer_mut();
-            match &mut window_pipeline.border {
-                Some(border) => {
-                    let inner = border.render(state, &ctx, rect, screen);
-                    // The border may have styled the whole `rect`; clear its
-                    // own styling back out of `inner` before anything draws there
-                    Clear.render(inner, screen);
-                    inner
-                }
-                None => rect,
-            }
-        };
-
-        let top_h = window_pipeline.top.height(state, &ctx, inner.height);
-        let bottom_h =
-            window_pipeline
-                .bottom
-                .height(state, &ctx, inner.height.saturating_sub(top_h));
-        let (top_rect, text_rect, bottom_rect) = split_vertically(inner, top_h, bottom_h);
-
-        {
-            let screen = frame.buffer_mut();
-            window_pipeline.top.render(state, &ctx, top_rect, screen);
-            window_pipeline
-                .bottom
-                .render(state, &ctx, bottom_rect, screen);
         }
+    }
 
-        self.content_rect = Some(text_rect);
+    /// Records the rect the whole window takes on screen
+    pub fn set_rect(&mut self, rect: Rect) {
+        self.rect = Some(rect);
+    }
+
+    /// Draws the selected buffer into the content rect
+    pub fn paint<S>(
+        &mut self,
+        storage: &buffer::Storage,
+        pipeline: &mut Pipeline<S>,
+        state: &mut S,
+        rect: Rect,
+        painter: &mut Painter,
+    ) {
+        self.content_rect = Some(rect);
 
         let Some(id) = self.bufs.selected() else {
             return;
@@ -211,7 +180,7 @@ impl Window {
             return;
         };
 
-        let viewport = buf.render(pipeline, state, frame, text_rect, self.scroll_shown());
+        let viewport = buf.render(pipeline, state, painter, rect, self.scroll_shown());
 
         if let Some(view) = self.bufs.state_mut() {
             view.viewport = Some(viewport);
