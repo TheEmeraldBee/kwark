@@ -5,12 +5,12 @@ use vello::Scene;
 use vello::util::RenderSurface;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
-use crate::{App, Color, Error};
+use crate::{App, Color, Cx, Error, Event, Fonts, Painter, Point, ScrollDelta, Size};
 
 /// One open window and what it draws with
 struct WindowState {
@@ -18,12 +18,27 @@ struct WindowState {
     surface: RenderSurface<'static>,
     scene: Scene,
     background: Color,
+    /// The last pointer position in logical pixels
+    pointer: Point,
+}
+
+impl WindowState {
+    fn scale(&self) -> f64 {
+        self.window.scale_factor()
+    }
+
+    /// Returns the inner size in logical pixels
+    fn size(&self) -> Size {
+        let size = self.window.inner_size().to_logical::<f32>(self.scale());
+        Size::new(size.width, size.height)
+    }
 }
 
 /// The winit handler that drives an app
 struct Shell<A: App> {
     app: A,
     gpu: Gpu,
+    fonts: Fonts,
     windows: HashMap<WindowId, WindowState>,
     error: Option<Error>,
 }
@@ -33,6 +48,7 @@ impl<A: App> Shell<A> {
         Self {
             app,
             gpu: Gpu::new(),
+            fonts: Fonts::new(),
             windows: HashMap::new(),
             error: None,
         }
@@ -55,6 +71,7 @@ impl<A: App> Shell<A> {
                 surface,
                 scene: Scene::new(),
                 background: options.background,
+                pointer: Point::default(),
             },
         );
 
@@ -65,6 +82,50 @@ impl<A: App> Shell<A> {
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: Error) {
         self.error = Some(error);
         event_loop.exit();
+    }
+}
+
+/// Returns the kui event for a winit event, updating the window's pointer
+fn translate(state: &mut WindowState, event: &WindowEvent) -> Option<Event> {
+    let scale = state.scale();
+
+    match *event {
+        WindowEvent::CursorMoved { position, .. } => {
+            let position = position.to_logical::<f32>(scale);
+            state.pointer = Point::new(position.x, position.y);
+
+            Some(Event::MouseMove {
+                position: state.pointer,
+            })
+        }
+        WindowEvent::MouseInput {
+            state: pressed,
+            button,
+            ..
+        } => {
+            let position = state.pointer;
+            let button = button.into();
+
+            Some(match pressed {
+                ElementState::Pressed => Event::MouseDown { position, button },
+                ElementState::Released => Event::MouseUp { position, button },
+            })
+        }
+        WindowEvent::MouseWheel { delta, .. } => {
+            let delta = match delta {
+                MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines(Point::new(x, y)),
+                MouseScrollDelta::PixelDelta(p) => {
+                    let p = p.to_logical::<f32>(scale);
+                    ScrollDelta::Pixels(Point::new(p.x, p.y))
+                }
+            };
+
+            Some(Event::Scroll {
+                position: state.pointer,
+                delta,
+            })
+        }
+        _ => None,
     }
 }
 
@@ -84,6 +145,23 @@ impl<A: App> ApplicationHandler for Shell<A> {
             return;
         };
 
+        if let Some(event) = translate(state, &event) {
+            let mut cx = Cx {
+                fonts: &mut self.fonts,
+                size: state.size(),
+                scale: state.scale() as f32,
+                redraw: false,
+            };
+
+            self.app.event(event, &mut cx);
+
+            if cx.redraw {
+                state.window.request_redraw();
+            }
+
+            return;
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 self.windows.remove(&id);
@@ -96,8 +174,17 @@ impl<A: App> ApplicationHandler for Shell<A> {
                 self.gpu.resize(&mut state.surface, size.width, size.height);
                 state.window.request_redraw();
             }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                state.window.request_redraw();
+            }
             WindowEvent::RedrawRequested => {
+                let size = state.size();
+                let scale = state.scale();
+
                 state.scene.reset();
+                let mut painter = Painter::new(&mut state.scene, &mut self.fonts, scale);
+                self.app.paint(&mut painter, size);
+                self.fonts.end_frame();
 
                 let res = self
                     .gpu
