@@ -14,6 +14,8 @@ pub enum Event {
     MouseMove {
         position: Point,
     },
+    /// The pointer left the window
+    MouseLeave,
     Scroll {
         position: Point,
         delta: ScrollDelta,

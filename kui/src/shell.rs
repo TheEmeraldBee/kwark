@@ -18,8 +18,8 @@ struct WindowState {
     surface: RenderSurface<'static>,
     scene: Scene,
     background: Color,
-    /// The last pointer position in logical pixels
-    pointer: Point,
+    /// The pointer position in logical pixels, while it is over the window
+    pointer: Option<Point>,
 }
 
 impl WindowState {
@@ -71,7 +71,7 @@ impl<A: App> Shell<A> {
                 surface,
                 scene: Scene::new(),
                 background: options.background,
-                pointer: Point::default(),
+                pointer: None,
             },
         );
 
@@ -92,18 +92,21 @@ fn translate(state: &mut WindowState, event: &WindowEvent) -> Option<Event> {
     match *event {
         WindowEvent::CursorMoved { position, .. } => {
             let position = position.to_logical::<f32>(scale);
-            state.pointer = Point::new(position.x, position.y);
+            let position = Point::new(position.x, position.y);
+            state.pointer = Some(position);
 
-            Some(Event::MouseMove {
-                position: state.pointer,
-            })
+            Some(Event::MouseMove { position })
+        }
+        WindowEvent::CursorLeft { .. } => {
+            state.pointer = None;
+            Some(Event::MouseLeave)
         }
         WindowEvent::MouseInput {
             state: pressed,
             button,
             ..
         } => {
-            let position = state.pointer;
+            let position = state.pointer.unwrap_or_default();
             let button = button.into();
 
             Some(match pressed {
@@ -121,7 +124,7 @@ fn translate(state: &mut WindowState, event: &WindowEvent) -> Option<Event> {
             };
 
             Some(Event::Scroll {
-                position: state.pointer,
+                position: state.pointer.unwrap_or_default(),
                 delta,
             })
         }
@@ -182,7 +185,8 @@ impl<A: App> ApplicationHandler for Shell<A> {
                 let scale = state.scale();
 
                 state.scene.reset();
-                let mut painter = Painter::new(&mut state.scene, &mut self.fonts, scale);
+                let mut painter =
+                    Painter::new(&mut state.scene, &mut self.fonts, scale, state.pointer);
                 self.app.paint(&mut painter, size);
                 self.fonts.end_frame();
 
