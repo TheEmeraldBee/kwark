@@ -1,9 +1,6 @@
 use std::time::{Duration, Instant};
 
-use kui::{
-    App, Color, Cx, Event, Key, KeyEvent, Mods, NamedKey, Node, Proxy, ScrollDelta, Size,
-    WindowOptions,
-};
+use kui::{App, Cx, Event, Key, KeyEvent, Mods, NamedKey, Node, Proxy, ScrollDelta, WindowOptions};
 
 use kwark_core::{
     Chord, Code, Editor, INPUT_TREE_FLAG, Incoming, KeyCode, KeyModifiers, MouseButton, Step,
@@ -12,9 +9,6 @@ use kwark_core::{
 
 /// Delay before the input tree popup shows
 const INPUT_TREE_DELAY: Duration = Duration::from_millis(400);
-
-/// Window background for a theme without a `background` style
-const BACKGROUND: Color = Color::rgb(0x1E1E2E);
 
 /// Runs the editor until a binding quits it or its window closes
 pub fn run<S: 'static>(editor: Editor<S>) {
@@ -172,17 +166,13 @@ impl<S: 'static> App for Kwark<S> {
     type Message = Incoming<S>;
 
     fn window(&self) -> WindowOptions {
-        let background = self.editor.core.theme.get("background").bg;
-
-        WindowOptions {
-            title: "kwark".into(),
-            size: Size::new(1200.0, 800.0),
-            background: background.unwrap_or(BACKGROUND),
-        }
+        self.editor.core.window_config.clone()
     }
 
     fn init(&mut self, proxy: Proxy<Incoming<S>>, cx: &mut Cx) {
+        // The window's fonts take over, keeping the rendering the flavor chose
         let pipeline = &mut self.editor.core.pipeline;
+        cx.fonts().set_rendering(pipeline.metrics.fonts.rendering());
         pipeline.metrics = pipeline.metrics.with_fonts(cx.fonts().clone());
 
         if let Some(mut inbox) = self.editor.take_inbox() {

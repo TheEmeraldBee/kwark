@@ -11,6 +11,7 @@ pub struct Metrics {
     pub fonts: Fonts,
     /// The style under every highlight
     pub text: TextStyle,
+    /// Height of one line, rounded to whole pixels so that rows sit on the pixel grid
     pub line_height: f32,
     /// The advance of one character, the unit for gutters and virtual columns
     pub char_width: f32,
@@ -18,7 +19,7 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn new(fonts: Fonts, text: TextStyle) -> Self {
-        let line_height = fonts.line_height(&text);
+        let line_height = fonts.line_height(&text).round().max(1.0);
         let char_width = fonts.char_width(&text);
 
         Self {

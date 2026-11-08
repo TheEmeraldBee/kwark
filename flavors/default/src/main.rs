@@ -120,9 +120,9 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         })?;
 
-        normal.bind(&["scroll_up"], "", create_scroll(-3))?;
+        normal.bind(&["scroll_up"], "", create_scroll(-5))?;
 
-        normal.bind(&["scroll_down"], "", create_scroll(3))?;
+        normal.bind(&["scroll_down"], "", create_scroll(5))?;
 
         normal.group(&["g"], "Goto Prefix", |g| {
             g.bind(&["p"], "Goto Previous Buffer in Window", |e| {
@@ -448,6 +448,24 @@ fn main() -> anyhow::Result<()> {
     editor.core.overlays.push(ui::overlays::InputTreePopup);
 
     theme::init_theme(&mut editor.core.theme);
+
+    editor.core.window_config = WindowOptions {
+        title: "kwark".into(),
+        size: Size::new(1200.0, 800.0),
+        background: Color::rgba(0x1E1E2EDD),
+        decorations: Decorations::None,
+        resizable: true,
+        transparent: true,
+        blur: true,
+    };
+
+    let metrics = &mut editor.core.pipeline.metrics;
+
+    *metrics =
+        metrics.with_text(TextStyle::default().family(Family::Named("Hack Nerd Font Mono".into())));
+
+    metrics.fonts.set_hinting(true);
+    metrics.fonts.set_embolden(0.02);
 
     kwark::run(editor);
 

@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
 
-use kui::Point;
+use kui::{Color, Point, Size, WindowOptions};
 use kwark_bus::{EventReceiver, EventSender, Message};
 use kwark_text::CursorOptions;
 use kwark_theme::Theme;
@@ -61,6 +61,8 @@ pub struct Core<S: 'static> {
     /// The pointer position of the most recent mouse event, read by chords bound to a mouse press
     pub mouse: Point,
     pub running: Running,
+    /// Options for the window, read once when it opens
+    pub window_config: WindowOptions,
 
     pub pipeline: Pipeline<S>,
     pub window_pipeline: WindowPipeline<S>,
@@ -87,6 +89,12 @@ impl<S: 'static> Core<S> {
             log: LogState::default(),
             mouse: Point::default(),
             running: Running(true),
+            window_config: WindowOptions {
+                title: "kwark".into(),
+                size: Size::new(1200.0, 800.0),
+                background: Color::rgb(0x1E1E2E),
+                ..WindowOptions::default()
+            },
 
             pipeline: Pipeline::default(),
             window_pipeline: WindowPipeline::default(),

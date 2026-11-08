@@ -29,4 +29,4 @@ mod shell;
 pub use shell::run;
 
 mod text;
-pub use text::{Family, Fonts, Span, TextLayout, TextStyle};
+pub use text::{Family, Fonts, Span, TextLayout, TextRendering, TextStyle};

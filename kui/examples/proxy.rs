@@ -115,6 +115,7 @@ impl App for Demo {
             title: "kui proxy".into(),
             size: Size::new(720.0, 420.0),
             background: BG,
+            ..WindowOptions::default()
         }
     }
 

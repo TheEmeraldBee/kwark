@@ -1,4 +1,4 @@
-use kui::{Color, Node, Rect, div, text};
+use kui::{Color, Node, Rect, Shadow, div, text};
 use kwark_core::{Editor, INPUT_TREE_FLAG};
 use kwark_render::Overlay;
 
@@ -30,9 +30,8 @@ impl<S: 'static> Overlay<Editor<S>> for InputTreePopup {
 
         let popup = div()
             .absolute()
-            .right(8.0)
-            .bottom(8.0)
-            .w_frac(0.4)
+            .right(32.0)
+            .bottom(32.0)
             .max_h(320.0)
             .flex_col()
             .p(8.0)

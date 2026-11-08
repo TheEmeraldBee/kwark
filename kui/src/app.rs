@@ -2,9 +2,10 @@ use std::time::Instant;
 
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event_loop::EventLoopProxy;
+pub use winit::window::ResizeDirection;
 use winit::window::Window;
 
-use crate::{Color, CursorIcon, Event, Fonts, Mods, Node, Rect, Size};
+use crate::{Color, CursorIcon, Event, Fonts, Mods, Node, Point, Rect, Size};
 
 /// Options for the window that kui opens
 #[derive(Clone, Debug)]
@@ -14,6 +15,13 @@ pub struct WindowOptions {
     pub size: Size,
     /// Color under everything the app draws
     pub background: Color,
+    pub decorations: Decorations,
+    /// Whether the user can resize the window
+    pub resizable: bool,
+    /// Whether the desktop shows through where the background color is not opaque
+    pub transparent: bool,
+    /// Whether the desktop behind a transparent window blurs, on desktops that support it
+    pub blur: bool,
 }
 
 impl Default for WindowOptions {
@@ -22,8 +30,24 @@ impl Default for WindowOptions {
             title: "kui".into(),
             size: Size::new(1024.0, 768.0),
             background: Color::BLACK,
+            decorations: Decorations::default(),
+            resizable: true,
+            transparent: false,
+            blur: false,
         }
     }
+}
+
+/// How the window frame looks
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Decorations {
+    /// The frame and title bar from the system
+    #[default]
+    System,
+    /// No frame, so the app draws its own title bar with `Cx::drag_window` and friends
+    None,
+    /// Content under a transparent title bar on macOS, the system frame elsewhere
+    Overlay,
 }
 
 /// Access to the window from app code
@@ -96,6 +120,27 @@ impl<'a> Cx<'a> {
             LogicalPosition::new(area.left(), area.top()),
             LogicalSize::new(area.size.width, area.size.height),
         );
+    }
+
+    /// Moves the window with the pointer, from a press on an app-drawn title bar
+    pub fn drag_window(&mut self) {
+        let _ = self.window.drag_window();
+    }
+
+    /// Resizes the window with the pointer, from a press near an edge
+    pub fn drag_resize(&mut self, direction: ResizeDirection) {
+        let _ = self.window.drag_resize_window(direction);
+    }
+
+    /// Opens the system menu for the window at a point
+    pub fn show_window_menu(&mut self, at: Point) {
+        self.window
+            .show_window_menu(LogicalPosition::new(at.x, at.y));
+    }
+
+    /// Shows or hides the system frame
+    pub fn set_decorations(&mut self, decorations: bool) {
+        self.window.set_decorations(decorations);
     }
 
     /// Keeps the window open after `Event::CloseRequested`

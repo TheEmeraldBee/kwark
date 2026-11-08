@@ -21,6 +21,7 @@ impl App for Hello {
             title: "kui hello".into(),
             size: Size::new(800.0, 500.0),
             background: Color::rgb(0x1E1E2E),
+            ..WindowOptions::default()
         }
     }
 }

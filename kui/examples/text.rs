@@ -184,6 +184,7 @@ impl App for Viewer {
             title: "kui text".into(),
             size: Size::new(900.0, 600.0),
             background: BG,
+            ..WindowOptions::default()
         }
     }
 

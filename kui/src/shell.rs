@@ -14,8 +14,8 @@ use winit::window::{Window, WindowId};
 use crate::gpu::Gpu;
 use crate::node::{Frame, Segment};
 use crate::{
-    App, Color, CursorIcon, Cx, Error, Event, Fonts, Key, KeyEvent, Mods, MouseButton, Painter,
-    Point, Proxy, ScrollDelta, Size,
+    App, Color, CursorIcon, Cx, Decorations, Error, Event, Fonts, Key, KeyEvent, Mods, MouseButton,
+    Painter, Point, Proxy, ScrollDelta, Size,
 };
 
 /// One open window and what it draws with
@@ -148,12 +148,34 @@ impl<A: App> Shell<A> {
         let options = self.app.window();
         let attributes = Window::default_attributes()
             .with_title(options.title)
-            .with_inner_size(LogicalSize::new(options.size.width, options.size.height));
+            .with_inner_size(LogicalSize::new(options.size.width, options.size.height))
+            .with_resizable(options.resizable)
+            .with_transparent(options.transparent)
+            .with_blur(options.blur)
+            .with_decorations(options.decorations != Decorations::None);
+
+        #[cfg(target_os = "macos")]
+        let attributes = {
+            use winit::platform::macos::WindowAttributesExtMacOS;
+
+            let overlay = options.decorations == Decorations::Overlay;
+            attributes
+                .with_titlebar_transparent(overlay)
+                .with_title_hidden(overlay)
+                .with_fullsize_content_view(overlay)
+        };
+
+        #[cfg(target_os = "windows")]
+        let attributes = {
+            use winit::platform::windows::WindowAttributesExtWindows;
+
+            attributes.with_undecorated_shadow(options.decorations == Decorations::None)
+        };
 
         let window = Arc::new(event_loop.create_window(attributes)?);
         window.set_ime_allowed(true);
 
-        let surface = self.gpu.surface(window.clone())?;
+        let surface = self.gpu.surface(window.clone(), options.transparent)?;
         let id = window.id();
 
         self.windows.insert(

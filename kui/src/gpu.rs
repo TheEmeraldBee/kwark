@@ -1,11 +1,25 @@
 use std::sync::Arc;
 
 use vello::util::{RenderContext, RenderSurface};
-use vello::wgpu::{self, CurrentSurfaceTexture};
+use vello::wgpu::util::TextureBlitterBuilder;
+use vello::wgpu::{
+    self, BlendComponent, BlendFactor, BlendOperation, BlendState, CompositeAlphaMode,
+    CurrentSurfaceTexture,
+};
 use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 use winit::window::Window;
 
 use crate::{Color, Error};
+
+/// Copies straight alpha into a premultiplied surface
+const PREMULTIPLY: BlendState = BlendState {
+    color: BlendComponent {
+        src_factor: BlendFactor::SrcAlpha,
+        dst_factor: BlendFactor::Zero,
+        operation: BlendOperation::Add,
+    },
+    alpha: BlendComponent::REPLACE,
+};
 
 /// The GPU device, shared by every window
 pub(crate) struct Gpu {
@@ -22,10 +36,14 @@ impl Gpu {
         }
     }
 
-    /// Returns a surface for the window at its current size
-    pub fn surface(&mut self, window: Arc<Window>) -> Result<RenderSurface<'static>, Error> {
+    /// Returns a surface for the window at its current size, see-through where alpha is below one if `transparent`
+    pub fn surface(
+        &mut self,
+        window: Arc<Window>,
+        transparent: bool,
+    ) -> Result<RenderSurface<'static>, Error> {
         let size = window.inner_size();
-        let surface = pollster::block_on(self.context.create_surface(
+        let mut surface = pollster::block_on(self.context.create_surface(
             window,
             size.width.max(1),
             size.height.max(1),
@@ -49,7 +67,39 @@ impl Gpu {
             self.renderers[id] = Some(renderer);
         }
 
+        if transparent {
+            self.make_transparent(&mut surface);
+        }
+
         Ok(surface)
+    }
+
+    /// Switches the surface to a mode where the compositor blends it with the desktop
+    fn make_transparent(&self, surface: &mut RenderSurface<'static>) {
+        let handle = &self.context.devices[surface.dev_id];
+        let modes = surface
+            .surface
+            .get_capabilities(handle.adapter())
+            .alpha_modes;
+
+        // Vello writes straight alpha, so a premultiplied surface needs the copy to multiply it in
+        let (mode, premultiply) = if modes.contains(&CompositeAlphaMode::PostMultiplied) {
+            (CompositeAlphaMode::PostMultiplied, false)
+        } else if modes.contains(&CompositeAlphaMode::PreMultiplied) {
+            (CompositeAlphaMode::PreMultiplied, true)
+        } else {
+            eprintln!("kui: the surface supports no alpha blending, so the window stays opaque");
+            return;
+        };
+
+        if premultiply {
+            surface.blitter = TextureBlitterBuilder::new(&handle.device, surface.format)
+                .blend_state(PREMULTIPLY)
+                .build();
+        }
+
+        surface.config.alpha_mode = mode;
+        self.context.configure_surface(surface);
     }
 
     /// Resizes the surface to a physical size, ignoring empty sizes

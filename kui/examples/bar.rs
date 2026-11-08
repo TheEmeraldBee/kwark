@@ -153,6 +153,7 @@ impl App for Bar {
             title: "kui bar".into(),
             size: Size::new(900.0, 500.0),
             background: BG,
+            ..WindowOptions::default()
         }
     }
 

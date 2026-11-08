@@ -1,6 +1,8 @@
-use vello::kurbo::{Affine, Line, Rect as KurboRect, RoundedRect, RoundedRectRadii, Stroke};
+use vello::kurbo::{
+    Affine, Diagonal2, Line, Rect as KurboRect, RoundedRect, RoundedRectRadii, Stroke,
+};
 use vello::peniko::{Fill, Mix};
-use vello::{Glyph, Scene};
+use vello::{FontEmbolden, Glyph, Scene};
 
 use parley::PositionedLayoutItem;
 
@@ -12,6 +14,7 @@ pub struct Painter<'a> {
     fonts: &'a mut Fonts,
     /// Logical pixels to physical pixels
     transform: Affine,
+    scale: f64,
     /// The window in logical pixels
     bounds: Rect,
     pointer: Option<Point>,
@@ -31,6 +34,7 @@ impl<'a> Painter<'a> {
             scene,
             fonts,
             transform: Affine::scale(scale),
+            scale,
             bounds: Rect::from_size(size),
             pointer,
             coords: Vec::new(),
@@ -143,6 +147,11 @@ impl<'a> Painter<'a> {
         let transform =
             self.transform * Affine::translate((f64::from(origin.x), f64::from(origin.y)));
 
+        let scale = self.scale;
+        let rendering = self.fonts.rendering();
+        let embolden = f64::from(rendering.embolden) * scale;
+        let embolden = FontEmbolden::new(Diagonal2::new(embolden, embolden));
+
         for line in layout.parley().lines() {
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyphs) = item else {
@@ -160,19 +169,28 @@ impl<'a> Painter<'a> {
                 self.coords
                     .extend(run.normalized_coords().iter().map(|c| c.to_bits()));
 
+                // Glyphs go down in physical pixels with the baseline on a whole pixel, so hinting sees the real size
+                let baseline = f64::from(origin.y + glyphs.baseline()) * scale;
+                let shift = baseline.round() - baseline;
+                let device = |x: f32, y: f32| {
+                    let x = f64::from(origin.x + x) * scale;
+                    let y = f64::from(origin.y + y) * scale + shift;
+                    (x as f32, y as f32)
+                };
+
                 self.scene
                     .draw_glyphs(run.font())
-                    .font_size(run.font_size())
-                    .transform(transform)
+                    .font_size(run.font_size() * scale as f32)
                     .glyph_transform(skew)
                     .normalized_coords(&self.coords)
                     .brush(vello::peniko::Color::from(style.brush))
+                    .hint(rendering.hinting)
+                    .font_embolden(embolden)
                     .draw(
                         Fill::NonZero,
-                        glyphs.positioned_glyphs().map(|g| Glyph {
-                            id: g.id,
-                            x: g.x,
-                            y: g.y,
+                        glyphs.positioned_glyphs().map(|g| {
+                            let (x, y) = device(g.x, g.y);
+                            Glyph { id: g.id, x, y }
                         }),
                     );
 

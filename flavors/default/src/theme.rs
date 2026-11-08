@@ -21,7 +21,6 @@ pub fn init_theme(theme: &mut Theme) {
     const TEXT: Color = Color::rgb(0xCDD6F4);
     const TEXT_DARK: Color = Color::rgb(0x333654);
     const OVERLAY2: Color = Color::rgb(0x9399B2);
-    const BASE: Color = Color::rgb(0x1E1E2E);
     const MANTLE: Color = Color::rgb(0x181825);
 
     theme.set_all([
@@ -88,7 +87,6 @@ pub fn init_theme(theme: &mut Theme) {
     ]);
 
     theme.set_all([
-        ("background", Style::new().bg(BASE)),
         ("text", f(TEXT)),
         ("popup", f(TEXT).bg(MANTLE)),
         ("popup.border", f(OVERLAY2)),

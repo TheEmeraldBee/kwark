@@ -131,6 +131,24 @@ impl<'a> Span<'a> {
     }
 }
 
+/// How glyphs turn into pixels
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextRendering {
+    /// Whether glyph outlines snap to the pixel grid
+    pub hinting: bool,
+    /// Extra stroke weight in logical pixels, for fonts that render too thin
+    pub embolden: f32,
+}
+
+impl Default for TextRendering {
+    fn default() -> Self {
+        Self {
+            hinting: true,
+            embolden: 0.0,
+        }
+    }
+}
+
 /// The font database and the cache of shaped lines, shared by every clone
 #[derive(Clone, Default)]
 pub struct Fonts(Rc<RefCell<FontsInner>>);
@@ -162,6 +180,24 @@ impl Fonts {
         self.line(&[Span::new(" ", style.clone())]).height()
     }
 
+    /// Returns how glyphs turn into pixels
+    pub fn rendering(&self) -> TextRendering {
+        self.0.borrow().rendering
+    }
+
+    pub fn set_rendering(&self, rendering: TextRendering) {
+        self.0.borrow_mut().rendering = rendering;
+    }
+
+    pub fn set_hinting(&self, hinting: bool) {
+        self.0.borrow_mut().rendering.hinting = hinting;
+    }
+
+    /// Sets the extra stroke weight in logical pixels, where 0.2 to 0.4 suits thin fonts
+    pub fn set_embolden(&self, amount: f32) {
+        self.0.borrow_mut().rendering.embolden = amount.max(0.0);
+    }
+
     /// Drops the lines that recent frames did not use
     pub(crate) fn end_frame(&self) {
         self.0.borrow_mut().cache.end_frame();
@@ -173,6 +209,7 @@ struct FontsInner {
     fonts: FontContext,
     layouts: LayoutContext<Color>,
     cache: LineCache,
+    rendering: TextRendering,
     /// Joined span text, kept to reuse its allocation
     text: String,
 }
@@ -183,6 +220,7 @@ impl Default for FontsInner {
             fonts: FontContext::new(),
             layouts: LayoutContext::new(),
             cache: LineCache::default(),
+            rendering: TextRendering::default(),
             text: String::new(),
         }
     }
