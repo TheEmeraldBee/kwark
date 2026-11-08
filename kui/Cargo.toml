@@ -1,0 +1,17 @@
+[package]
+name = "kui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+# Error Handling
+
+thiserror.workspace = true
+
+# Interface
+
+winit.workspace = true
+vello.workspace = true
+pollster.workspace = true

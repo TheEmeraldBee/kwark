@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["flavors/*", "kwark", "kwark-buffer", "kwark-bus", "kwark-core", "kwark-input", "kwark-lsp", "kwark-macros", "kwark-plugins", "kwark-render", "kwark-text", "kwark-theme", "kwark-tree-sitter", "kwark-ui", "kwark-window"]
+members = ["flavors/*", "kwark", "kwark-buffer", "kwark-bus", "kwark-core", "kwark-input", "kwark-lsp", "kwark-macros", "kwark-plugins", "kwark-render", "kwark-text", "kwark-theme", "kwark-tree-sitter", "kwark-ui", "kwark-window", "kui"]
 
 [workspace.package]
 version = "0.0.0"
@@ -21,6 +21,7 @@ kwark-theme = { path = "./kwark-theme", version = "0.0.0" }
 kwark-tree-sitter = { path = "./kwark-tree-sitter", version = "0.0.0" }
 kwark-ui = { path = "./kwark-ui", version = "0.0.0" }
 kwark-window = { path = "./kwark-window", version = "0.0.0" }
+kui = { path = "./kui", version = "0.0.0" }
 
 # Error Handling
 
@@ -31,6 +32,12 @@ thiserror = "2.0.18"
 
 crossterm = { version = "0.29.0", features = ["event-stream"] }
 ratatui = "0.30.2"
+
+# Interface
+
+winit = "0.30.13"
+vello = "0.11.0"
+pollster = "1.0.1"
 
 # Async
 
