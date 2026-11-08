@@ -19,6 +19,9 @@ pub use geom::*;
 
 mod gpu;
 
+mod node;
+pub use node::{CursorIcon, Node, Shadow, Visual, canvas, div, rich, text};
+
 mod paint;
 pub use paint::Painter;
 

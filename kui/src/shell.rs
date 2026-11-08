@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use taffy::TaffyTree;
 use vello::Scene;
 use vello::util::RenderSurface;
 use winit::application::ApplicationHandler;
@@ -10,19 +11,30 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
-use crate::{App, Color, Cx, Error, Event, Fonts, Painter, Point, ScrollDelta, Size};
+use crate::node::{Frame, Segment};
+use crate::{
+    App, Color, CursorIcon, Cx, Error, Event, Fonts, MouseButton, Painter, Point, ScrollDelta, Size,
+};
 
 /// One open window and what it draws with
-struct WindowState {
+struct WindowState<S> {
     window: Arc<Window>,
     surface: RenderSurface<'static>,
     scene: Scene,
     background: Color,
     /// The pointer position in logical pixels, while it is over the window
     pointer: Option<Point>,
+    taffy: TaffyTree<usize>,
+    /// The last frame, for input until the next one
+    frame: Option<Frame<S>>,
+    /// The topmost node under the pointer in the last frame
+    hit: Option<usize>,
+    /// The path to the node that took the last mouse down
+    pressed: Option<Vec<Segment>>,
+    cursor: CursorIcon,
 }
 
-impl WindowState {
+impl<S> WindowState<S> {
     fn scale(&self) -> f64 {
         self.window.scale_factor()
     }
@@ -32,6 +44,66 @@ impl WindowState {
         let size = self.window.inner_size().to_logical::<f32>(self.scale());
         Size::new(size.width, size.height)
     }
+
+    /// Moves hover to the node under the pointer, asking for a frame if a look changes
+    fn update_hover(&mut self, cx: &mut Cx) {
+        let Some(frame) = &self.frame else {
+            return;
+        };
+
+        let hit = self.pointer.and_then(|p| frame.hit(p));
+        if hit != self.hit && (frame.hover_styled(self.hit) || frame.hover_styled(hit)) {
+            cx.request_redraw();
+        }
+        self.hit = hit;
+
+        let cursor = frame.cursor(hit);
+        if cursor != self.cursor {
+            self.window.set_cursor(cursor);
+            self.cursor = cursor;
+        }
+    }
+
+    /// Sends a mouse event to the node it lands on, returning whether a node took it
+    fn dispatch(&mut self, event: &Event, state: &mut S, cx: &mut Cx) -> bool {
+        match *event {
+            Event::MouseMove { .. } | Event::MouseLeave => {
+                self.update_hover(cx);
+                false
+            }
+            Event::MouseDown {
+                position,
+                button: MouseButton::Left,
+            } => {
+                let Some(frame) = &self.frame else {
+                    return false;
+                };
+
+                let target = frame.hit(position).and_then(|h| frame.clickable(h));
+                self.pressed = target.map(|t| frame.path(t));
+                target.is_some()
+            }
+            Event::MouseUp {
+                position,
+                button: MouseButton::Left,
+            } => {
+                let (Some(frame), Some(pressed)) = (&mut self.frame, self.pressed.take()) else {
+                    return false;
+                };
+
+                let target = frame.hit(position).and_then(|h| frame.clickable(h));
+                if let Some(t) = target
+                    && frame.path(t) == pressed
+                    && let Some(on_click) = frame.nodes[t].on_click.as_mut()
+                {
+                    on_click(state, cx);
+                }
+
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 /// The winit handler that drives an app
@@ -39,7 +111,7 @@ struct Shell<A: App> {
     app: A,
     gpu: Gpu,
     fonts: Fonts,
-    windows: HashMap<WindowId, WindowState>,
+    windows: HashMap<WindowId, WindowState<A::State>>,
     error: Option<Error>,
 }
 
@@ -72,6 +144,11 @@ impl<A: App> Shell<A> {
                 scene: Scene::new(),
                 background: options.background,
                 pointer: None,
+                taffy: TaffyTree::new(),
+                frame: None,
+                hit: None,
+                pressed: None,
+                cursor: CursorIcon::Default,
             },
         );
 
@@ -86,7 +163,7 @@ impl<A: App> Shell<A> {
 }
 
 /// Returns the kui event for a winit event, updating the window's pointer
-fn translate(state: &mut WindowState, event: &WindowEvent) -> Option<Event> {
+fn translate<S>(state: &mut WindowState<S>, event: &WindowEvent) -> Option<Event> {
     let scale = state.scale();
 
     match *event {
@@ -156,7 +233,9 @@ impl<A: App> ApplicationHandler for Shell<A> {
                 redraw: false,
             };
 
-            self.app.event(event, &mut cx);
+            if !state.dispatch(&event, self.app.state(), &mut cx) {
+                self.app.event(event, &mut cx);
+            }
 
             if cx.redraw {
                 state.window.request_redraw();
@@ -184,10 +263,37 @@ impl<A: App> ApplicationHandler for Shell<A> {
                 let size = state.size();
                 let scale = state.scale();
 
+                let mut cx = Cx {
+                    fonts: &mut self.fonts,
+                    size,
+                    scale: scale as f32,
+                    redraw: false,
+                };
+                let root = self.app.view(&mut cx);
+                let again = cx.redraw;
+
+                let mut frame = match Frame::build(root, size, &mut self.fonts, &mut state.taffy) {
+                    Ok(frame) => frame,
+                    Err(e) => return self.fail(event_loop, e),
+                };
+
+                state.hit = state.pointer.and_then(|p| frame.hit(p));
+                let cursor = frame.cursor(state.hit);
+                if cursor != state.cursor {
+                    state.window.set_cursor(cursor);
+                    state.cursor = cursor;
+                }
+
                 state.scene.reset();
-                let mut painter =
-                    Painter::new(&mut state.scene, &mut self.fonts, scale, state.pointer);
-                self.app.paint(&mut painter, size);
+                let mut painter = Painter::new(
+                    &mut state.scene,
+                    &mut self.fonts,
+                    scale,
+                    size,
+                    state.pointer,
+                );
+                frame.paint(&mut painter, self.app.state(), state.hit);
+                state.frame = Some(frame);
                 self.fonts.end_frame();
 
                 let res = self
@@ -195,7 +301,11 @@ impl<A: App> ApplicationHandler for Shell<A> {
                     .present(&state.surface, &state.scene, state.background);
 
                 if let Err(e) = res {
-                    self.fail(event_loop, e);
+                    return self.fail(event_loop, e);
+                }
+
+                if again {
+                    state.window.request_redraw();
                 }
             }
             _ => {}

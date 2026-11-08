@@ -1,4 +1,4 @@
-use crate::{Color, Event, Fonts, Painter, Size};
+use crate::{Color, Event, Fonts, Node, Size};
 
 /// Options for the window that kui opens
 #[derive(Clone, Debug)]
@@ -51,14 +51,20 @@ impl Cx<'_> {
 
 /// An application that kui drives
 pub trait App: 'static {
+    /// Data that element handlers receive
+    type State: 'static;
+
     /// Options for the window
     fn window(&self) -> WindowOptions {
         WindowOptions::default()
     }
 
-    /// Handles an input event
+    /// Returns the state that element handlers receive
+    fn state(&mut self) -> &mut Self::State;
+
+    /// Handles an input event that no element took
     fn event(&mut self, _event: Event, _cx: &mut Cx) {}
 
-    /// Draws one frame into a window of the given size
-    fn paint(&mut self, _painter: &mut Painter, _size: Size) {}
+    /// Returns the element tree for one frame
+    fn view(&mut self, cx: &mut Cx) -> Node<Self::State>;
 }

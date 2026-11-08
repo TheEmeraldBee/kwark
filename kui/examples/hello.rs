@@ -1,10 +1,20 @@
 //! A window with a clear color
 
-use kui::{App, Color, Size, WindowOptions};
+use kui::{App, Color, Cx, Node, Size, WindowOptions, div};
 
 struct Hello;
 
 impl App for Hello {
+    type State = Self;
+
+    fn state(&mut self) -> &mut Self {
+        self
+    }
+
+    fn view(&mut self, _cx: &mut Cx) -> Node<Self> {
+        div()
+    }
+
     fn window(&self) -> WindowOptions {
         WindowOptions {
             title: "kui hello".into(),

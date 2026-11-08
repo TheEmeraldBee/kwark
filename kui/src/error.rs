@@ -9,4 +9,7 @@ pub enum Error {
 
     #[error("gpu: {0}")]
     Gpu(#[from] vello::Error),
+
+    #[error("layout: {0}")]
+    Layout(#[from] taffy::TaffyError),
 }

@@ -3,8 +3,8 @@
 use std::time::{Duration, Instant};
 
 use kui::{
-    App, Color, Cx, Event, MouseButton, Painter, Point, Rect, ScrollDelta, Size, Span, TextStyle,
-    WindowOptions,
+    App, Color, Cx, Event, MouseButton, Node, Painter, Point, Rect, ScrollDelta, Size, Span,
+    TextStyle, WindowOptions, canvas,
 };
 
 const LINES: usize = 200;
@@ -168,6 +168,16 @@ impl Viewer {
 }
 
 impl App for Viewer {
+    type State = Self;
+
+    fn state(&mut self) -> &mut Self {
+        self
+    }
+
+    fn view(&mut self, _cx: &mut Cx) -> Node<Self> {
+        canvas(|s: &mut Self, rect, p| s.paint_frame(p, rect.size)).size_full()
+    }
+
     fn window(&self) -> WindowOptions {
         WindowOptions {
             title: "kui text".into(),
@@ -209,8 +219,10 @@ impl App for Viewer {
             _ => {}
         }
     }
+}
 
-    fn paint(&mut self, p: &mut Painter, size: Size) {
+impl Viewer {
+    fn paint_frame(&mut self, p: &mut Painter, size: Size) {
         let start = Instant::now();
         let line_height = p.fonts().line_height(&self.style);
         let numbers = self.style.clone().color(MUTED);

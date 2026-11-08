@@ -70,9 +70,46 @@ impl Rect {
         Self::new(self.left() + amount, self.top() + amount, width, height)
     }
 
+    /// Returns the overlap of two rects, empty when they do not meet
+    pub fn intersect(&self, other: Rect) -> Self {
+        let left = self.left().max(other.left());
+        let top = self.top().max(other.top());
+        let right = self.right().min(other.right()).max(left);
+        let bottom = self.bottom().min(other.bottom()).max(top);
+        Self::new(left, top, right - left, bottom - top)
+    }
+
     /// Returns whether the point lies inside, counting the top and left edges only
     pub fn contains(&self, p: Point) -> bool {
         p.x >= self.left() && p.x < self.right() && p.y >= self.top() && p.y < self.bottom()
+    }
+}
+
+/// A width for each side of a rect in logical pixels
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Edges {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+impl Edges {
+    pub const ZERO: Self = Self::all(0.0);
+
+    /// Returns edges that all share one width
+    pub const fn all(width: f32) -> Self {
+        Self {
+            top: width,
+            right: width,
+            bottom: width,
+            left: width,
+        }
+    }
+
+    /// Returns whether every side has the same width
+    pub fn is_uniform(&self) -> bool {
+        self.top == self.right && self.right == self.bottom && self.bottom == self.left
     }
 }
 
@@ -127,6 +164,17 @@ mod test {
         assert!(r.contains(Point::new(29.9, 14.9)));
         assert!(!r.contains(Point::new(30.0, 12.0)));
         assert!(!r.contains(Point::new(12.0, 15.0)));
+    }
+
+    #[test]
+    fn intersect_is_empty_when_rects_do_not_meet() {
+        let a = Rect::new(0.0, 0.0, 10.0, 10.0);
+
+        assert_eq!(
+            a.intersect(Rect::new(5.0, 5.0, 10.0, 10.0)),
+            Rect::new(5.0, 5.0, 5.0, 5.0)
+        );
+        assert_eq!(a.intersect(Rect::new(20.0, 0.0, 5.0, 5.0)).size.width, 0.0);
     }
 
     #[test]

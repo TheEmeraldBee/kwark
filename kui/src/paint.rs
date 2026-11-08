@@ -1,10 +1,10 @@
 use vello::kurbo::{Affine, Line, Rect as KurboRect, RoundedRect, RoundedRectRadii, Stroke};
-use vello::peniko::Fill;
+use vello::peniko::{Fill, Mix};
 use vello::{Glyph, Scene};
 
 use parley::PositionedLayoutItem;
 
-use crate::{Color, Corners, Fonts, Point, Rect, TextLayout};
+use crate::{Color, Corners, Fonts, Point, Rect, Size, TextLayout};
 
 /// Draws shapes and text into a frame, in logical pixels
 pub struct Painter<'a> {
@@ -12,6 +12,8 @@ pub struct Painter<'a> {
     fonts: &'a mut Fonts,
     /// Logical pixels to physical pixels
     transform: Affine,
+    /// The window in logical pixels
+    bounds: Rect,
     pointer: Option<Point>,
     /// Normalized font coords for the current run, kept to reuse the allocation
     coords: Vec<i16>,
@@ -22,12 +24,14 @@ impl<'a> Painter<'a> {
         scene: &'a mut Scene,
         fonts: &'a mut Fonts,
         scale: f64,
+        size: Size,
         pointer: Option<Point>,
     ) -> Self {
         Self {
             scene,
             fonts,
             transform: Affine::scale(scale),
+            bounds: Rect::from_size(size),
             pointer,
             coords: Vec::new(),
         }
@@ -113,6 +117,21 @@ impl<'a> Painter<'a> {
     pub fn clip<R>(&mut self, rect: Rect, f: impl FnOnce(&mut Self) -> R) -> R {
         self.scene
             .push_clip_layer(Fill::NonZero, self.transform, &kurbo_rect(rect));
+        let result = f(self);
+        self.scene.pop_layer();
+
+        result
+    }
+
+    /// Runs the closure with everything it draws faded to an opacity
+    pub fn opacity<R>(&mut self, alpha: f32, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.scene.push_layer(
+            Fill::NonZero,
+            Mix::Normal,
+            alpha,
+            self.transform,
+            &kurbo_rect(self.bounds),
+        );
         let result = f(self);
         self.scene.pop_layer();
 

@@ -1,7 +1,8 @@
 //! A caret, a drag selection, and a popup with a shadow
 
 use kui::{
-    App, Color, Cx, Event, MouseButton, Painter, Point, Rect, Size, Span, TextStyle, WindowOptions,
+    App, Color, Cx, Event, MouseButton, Node, Painter, Point, Rect, Size, Span, TextStyle,
+    WindowOptions, canvas,
 };
 
 const BG: Color = Color::rgb(0x11111B);
@@ -134,6 +135,16 @@ impl Demo {
 }
 
 impl App for Demo {
+    type State = Self;
+
+    fn state(&mut self) -> &mut Self {
+        self
+    }
+
+    fn view(&mut self, _cx: &mut Cx) -> Node<Self> {
+        canvas(|s: &mut Self, rect, p| s.paint_frame(p, rect.size)).size_full()
+    }
+
     fn window(&self) -> WindowOptions {
         WindowOptions {
             title: "kui paint".into(),
@@ -167,8 +178,10 @@ impl App for Demo {
         // The popup hover follows the pointer, so every event redraws
         cx.request_redraw();
     }
+}
 
-    fn paint(&mut self, p: &mut Painter, size: Size) {
+impl Demo {
+    fn paint_frame(&mut self, p: &mut Painter, size: Size) {
         let panel = Self::panel(size);
         let origin = Self::origin(size);
         let height = p.fonts().line_height(&self.style);
