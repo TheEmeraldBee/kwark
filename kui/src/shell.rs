@@ -32,6 +32,8 @@ struct WindowState<S> {
     frame: Option<Frame<S>>,
     /// The topmost node under the pointer in the last frame
     hit: Option<usize>,
+    /// The path to `hit`, which the next frame applies hover along
+    hovered: Option<Vec<Segment>>,
     /// The path to the node that took the last mouse down
     pressed: Option<Vec<Segment>>,
     /// The pointer icon the app set for places where no node sets one
@@ -76,6 +78,7 @@ impl<S> WindowState<S> {
         }
 
         self.hit = hit;
+        self.hovered = hit.map(|h| frame.path(h));
         self.refresh_cursor();
     }
 
@@ -190,6 +193,7 @@ impl<A: App> Shell<A> {
                 taffy: TaffyTree::new(),
                 frame: None,
                 hit: None,
+                hovered: None,
                 pressed: None,
                 app_cursor: CursorIcon::Default,
                 cursor: CursorIcon::Default,
@@ -258,12 +262,19 @@ impl<A: App> Shell<A> {
         let size = state.size();
         let scale = state.scale();
 
-        let mut frame = match Frame::build(root, size, &mut self.fonts, &mut state.taffy) {
+        let mut frame = match Frame::build(
+            root,
+            state.hovered.as_deref(),
+            size,
+            &mut self.fonts,
+            &mut state.taffy,
+        ) {
             Ok(frame) => frame,
             Err(e) => return self.fail(event_loop, e),
         };
 
         state.hit = state.pointer.and_then(|p| frame.hit(p));
+        state.hovered = state.hit.map(|h| frame.path(h));
 
         state.scene.reset();
         let mut painter = Painter::new(
@@ -273,7 +284,7 @@ impl<A: App> Shell<A> {
             size,
             state.pointer,
         );
-        frame.paint(&mut painter, self.app.state(), state.hit);
+        frame.paint(&mut painter, self.app.state());
         state.frame = Some(frame);
         state.refresh_cursor();
         self.fonts.end_frame();

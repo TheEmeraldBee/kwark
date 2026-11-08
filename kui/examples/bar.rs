@@ -59,7 +59,7 @@ impl Bar {
             .px(4.0)
             .rounded(4.0)
             .color(MUTED)
-            .hover(|v| v.bg(TAB_HOVER).color(RED))
+            .hover(|n| n.bg(TAB_HOVER).color(RED))
             .on_click(move |s: &mut Self, cx| {
                 s.tabs.retain(|t| t.id != id);
                 if s.active == id {
@@ -81,7 +81,7 @@ impl Bar {
             .bg(bg)
             .color(if active { FG } else { MUTED })
             .border_b(2.0, if active { ACTIVE } else { Color::TRANSPARENT })
-            .hover(move |v| v.bg(if active { TAB } else { TAB_HOVER }).color(FG))
+            .hover(move |n| n.bg(if active { TAB } else { TAB_HOVER }).color(FG))
             .cursor(CursorIcon::Pointer)
             .on_click(move |s: &mut Self, cx| {
                 s.active = id;
@@ -100,7 +100,7 @@ impl Bar {
             .justify_center()
             .rounded(6.0)
             .color(MUTED)
-            .hover(|v| v.bg(TAB_HOVER).color(FG))
+            .hover(|n| n.bg(TAB_HOVER).color(FG))
             .cursor(CursorIcon::Pointer)
             .on_click(|s: &mut Self, cx| {
                 let id = s.next;

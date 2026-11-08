@@ -8,7 +8,7 @@ use kwark::{
         movement::{self, Motion},
         window,
     },
-    prelude::{text::BoundCursorSet, tree_sitter::LanguageStore},
+    prelude::{kui::*, text::BoundCursorSet, tree_sitter::LanguageStore},
 };
 
 mod theme;
@@ -403,7 +403,13 @@ fn main() -> anyhow::Result<()> {
         .pipeline
         .highlighters
         .push(ui::highlighters::TreeSitter)
-        .push(ui::highlighters::Cursor);
+        .push(ui::highlighters::Selection);
+
+    editor
+        .core
+        .pipeline
+        .carets
+        .set(ui::carets::Shaped::default());
 
     editor
         .core
@@ -466,6 +472,11 @@ fn main() -> anyhow::Result<()> {
 
     metrics.fonts.set_hinting(true);
     metrics.fonts.set_embolden(0.02);
+
+    editor
+        .core
+        .editor_pipeline
+        .set_wrapper(|_: &mut Editor, inner: Node<Editor>| div().m(3.0).child(inner));
 
     kwark::run(editor);
 

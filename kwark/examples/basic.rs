@@ -154,14 +154,19 @@ fn main() -> anyhow::Result<()> {
         .top
         .push_row(|r| r.push_center(ui::bar::Tabs));
 
-    // Finally, let's make it so we can see the cursor on the editor
-    //
-    // This just registers a Highlighter, which can change the color of text on the screen!
+    // Finally, draw a caret for each cursor, in a shape that follows the input mode
+    editor
+        .core
+        .pipeline
+        .carets
+        .set(ui::carets::Shaped::default());
+
+    // A highlighter colors text, here the text that each cursor selects
     editor
         .core
         .pipeline
         .highlighters
-        .push(ui::highlighters::Cursor);
+        .push(ui::highlighters::Selection);
 
     // Now, in this example, we just create a scratch buffer for users to play with,
     // but you can get creative! Do fun stuff with your editor, integrate it with cli tools,

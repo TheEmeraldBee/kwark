@@ -1,5 +1,5 @@
 mod tree_sitter;
 pub use tree_sitter::*;
 
-mod cursor;
-pub use cursor::*;
+mod selection;
+pub use selection::*;

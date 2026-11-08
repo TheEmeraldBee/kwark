@@ -1,3 +1,4 @@
+mod caret;
 mod hit;
 mod layout;
 mod paint;
@@ -10,7 +11,10 @@ use taffy::{
     LengthPercentageAuto, Overflow, Position,
 };
 
+pub use caret::{CaretShape, CaretStyle};
 pub(crate) use layout::{Frame, Segment};
+
+use caret::Caret;
 pub use style::{Shadow, Visual};
 pub use winit::window::CursorIcon;
 
@@ -23,8 +27,8 @@ pub(crate) type ClickHandler<S> = Box<dyn FnMut(&mut S, &mut Cx)>;
 /// A closure that paints a node's content rect
 pub(crate) type PaintFn<S> = Box<dyn FnMut(&mut S, Rect, &mut Painter)>;
 
-/// A change to a node's look while the pointer is over it
-pub(crate) type HoverFn = Box<dyn Fn(Visual) -> Visual>;
+/// A replacement for a node while the pointer is over it
+pub(crate) type HoverFn<S> = Box<dyn FnOnce(Node<S>) -> Node<S>>;
 
 /// What a node holds
 pub(crate) enum Kind<S> {
@@ -42,7 +46,8 @@ pub struct Node<S> {
     pub(crate) style: taffy::Style,
     pub(crate) visual: Visual,
     pub(crate) text: TextPatch,
-    pub(crate) hover: Option<HoverFn>,
+    pub(crate) caret: Option<Caret>,
+    pub(crate) hover: Option<HoverFn<S>>,
     pub(crate) cursor: Option<CursorIcon>,
     pub(crate) on_click: Option<ClickHandler<S>>,
     pub(crate) id: Option<u64>,
@@ -81,12 +86,15 @@ impl<S> Node<S> {
     fn new(kind: Kind<S>) -> Self {
         Self {
             kind,
+            // Every node is a containing block, so `absolute` places a node within its parent
             style: taffy::Style {
                 display: Display::Flex,
+                position: Position::Relative,
                 ..taffy::Style::default()
             },
             visual: Visual::default(),
             text: TextPatch::default(),
+            caret: None,
             hover: None,
             cursor: None,
             on_click: None,
@@ -295,6 +303,62 @@ impl<S> Node<S> {
         self
     }
 
+    /// Sets the left-sided margin
+    pub fn ml(mut self, margin: f32) -> Self {
+        let margin = length_auto(margin);
+
+        self.style.margin.left = margin;
+
+        self
+    }
+
+    /// Sets the right-sided margin
+    pub fn mr(mut self, margin: f32) -> Self {
+        let margin = length_auto(margin);
+
+        self.style.margin.right = margin;
+
+        self
+    }
+
+    /// Sets the bottom-sided margin
+    pub fn mb(mut self, margin: f32) -> Self {
+        let margin = length_auto(margin);
+
+        self.style.margin.bottom = margin;
+
+        self
+    }
+
+    /// Sets the top-sided margin
+    pub fn mt(mut self, margin: f32) -> Self {
+        let margin = length_auto(margin);
+
+        self.style.margin.top = margin;
+
+        self
+    }
+
+    /// Set the x axis margins
+    pub fn mx(mut self, margin: f32) -> Self {
+        let margin = length_auto(margin);
+
+        self.style.margin.left = margin;
+        self.style.margin.right = margin;
+
+        self
+    }
+
+    /// Set the y axis margins
+    pub fn my(mut self, margin: f32) -> Self {
+        let margin = length_auto(margin);
+
+        self.style.margin.top = margin;
+        self.style.margin.bottom = margin;
+
+        self
+    }
+
     /// Takes the node out of the flow, placed by `inset` within its parent
     pub fn absolute(mut self) -> Self {
         self.style.position = Position::Absolute;
@@ -447,10 +511,16 @@ impl<S> Node<S> {
         self.overflow_hidden()
     }
 
+    /// Draws a caret at a char index of the text, keeping it in view when the text overflows
+    pub fn caret(mut self, index: usize, style: CaretStyle) -> Self {
+        self.caret = Some(Caret { index, style });
+        self
+    }
+
     // Input
 
-    /// Changes the look while the pointer is over the node or its children
-    pub fn hover(mut self, f: impl Fn(Visual) -> Visual + 'static) -> Self {
+    /// Replaces the node while the pointer is over it or its children
+    pub fn hover(mut self, f: impl FnOnce(Node<S>) -> Node<S> + 'static) -> Self {
         self.hover = Some(Box::new(f));
         self
     }

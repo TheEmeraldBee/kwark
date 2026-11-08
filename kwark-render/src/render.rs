@@ -336,6 +336,7 @@ mod test {
             primary: 0,
             tree: None,
             metrics,
+            active: false,
         }
     }
 

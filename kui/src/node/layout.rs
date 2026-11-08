@@ -1,6 +1,6 @@
 use taffy::{AvailableSpace, Dimension, NodeId, Overflow, TaffyTree, compute_leaf_layout};
 
-use super::{ClickHandler, CursorIcon, HoverFn, Kind, Node, Visual};
+use super::{Caret, ClickHandler, CursorIcon, Kind, Node, Visual};
 use crate::{Edges, Error, Fonts, Point, Rect, Size, Span, TextStyle};
 
 /// A clip that lets everything through
@@ -23,8 +23,10 @@ pub(crate) struct Flat<S> {
     /// The id or child index that names this node within its parent
     pub segment: Segment,
     pub content: Content<S>,
+    pub caret: Option<Caret>,
     pub visual: Visual,
-    pub hover: Option<HoverFn>,
+    /// Whether the node changes while the pointer is over it
+    pub hover: bool,
     pub cursor: Option<CursorIcon>,
     pub on_click: Option<ClickHandler<S>>,
     pub clips: bool,
@@ -51,9 +53,10 @@ pub(crate) struct Frame<S> {
 }
 
 impl<S> Frame<S> {
-    /// Lays out a tree to fill a window of the given size
+    /// Lays out a tree to fill a window of the given size, with hover applied along `hovered`
     pub fn build(
         root: Node<S>,
+        hovered: Option<&[Segment]>,
         size: Size,
         fonts: &mut Fonts,
         taffy: &mut TaffyTree<usize>,
@@ -63,6 +66,7 @@ impl<S> Frame<S> {
             root,
             None,
             Segment::Index(0),
+            hovered,
             &TextStyle::default(),
             &mut nodes,
         );
@@ -84,7 +88,9 @@ impl<S> Frame<S> {
         };
 
         taffy.compute_layout_with_measure(root, available, |inputs, _, index, style| {
-            let content = index.map(|&mut i| &nodes[i].content);
+            let node = index.map(|&mut i| &nodes[i]);
+            let content = node.map(|n| &n.content);
+            let caret = node.is_some_and(|n| n.caret.is_some());
 
             compute_leaf_layout(
                 inputs,
@@ -96,8 +102,16 @@ impl<S> Frame<S> {
                             let spans: Vec<Span> =
                                 spans.iter().map(|(t, s)| Span::new(t, s.clone())).collect();
                             let line = fonts.line(&spans);
+
+                            // A caret past the last character needs a cell of its own
+                            let end = match (caret, spans.last()) {
+                                (true, Some(last)) => fonts.char_width(&last.style),
+                                (true, None) => fonts.char_width(&TextStyle::default()),
+                                (false, _) => 0.0,
+                            };
+
                             taffy::Size {
-                                width: line.width(),
+                                width: line.width() + end,
                                 height: line.height(),
                             }
                         }
@@ -175,14 +189,29 @@ impl<S> Frame<S> {
     }
 }
 
-/// Appends a node and its subtree in tree order
+/// Appends a node and its subtree in tree order, replacing the nodes on the hovered path
 fn flatten<S>(
-    node: Node<S>,
+    mut node: Node<S>,
     parent: Option<usize>,
     segment: Segment,
+    hovered: Option<&[Segment]>,
     inherited: &TextStyle,
     out: &mut Vec<Flat<S>>,
 ) {
+    // The segment comes before hover so that the path still matches next frame
+    let segment = node.id.map_or(segment, Segment::Id);
+    let hovered = hovered
+        .and_then(|h| h.split_first())
+        .filter(|(first, _)| **first == segment)
+        .map(|(_, rest)| rest);
+
+    let hover = node.hover.is_some();
+    if hovered.is_some()
+        && let Some(f) = node.hover.take()
+    {
+        node = f(node);
+    }
+
     let index = out.len();
     let text = node.text.apply(inherited);
     let clips = node.style.overflow.x != Overflow::Visible;
@@ -197,10 +226,11 @@ fn flatten<S>(
     out.push(Flat {
         parent,
         end: index + 1,
-        segment: node.id.map_or(segment, Segment::Id),
+        segment,
         content,
+        caret: node.caret,
         visual: node.visual,
-        hover: node.hover,
+        hover,
         cursor: node.cursor,
         on_click: node.on_click,
         clips,
@@ -212,7 +242,7 @@ fn flatten<S>(
     });
 
     for (i, child) in node.children.into_iter().enumerate() {
-        flatten(child, Some(index), Segment::Index(i), &text, out);
+        flatten(child, Some(index), Segment::Index(i), hovered, &text, out);
     }
 
     out[index].end = out.len();

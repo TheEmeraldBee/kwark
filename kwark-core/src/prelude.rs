@@ -22,7 +22,9 @@ pub use crate::WindowPipeline;
 
 pub use kwark_input::{Chord, Code, KeyCode, KeyModifiers, MouseButton, Step};
 
-pub use kui::{Color, Decorations, Family, Size, TextRendering, TextStyle, WindowOptions};
+pub use kui;
+pub use kui::{Color, Decorations, Family, Node, Size, TextRendering, TextStyle, WindowOptions};
+
 pub use kwark_buffer as buffer;
 pub use kwark_render as render;
 pub use kwark_text as text;

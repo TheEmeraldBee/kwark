@@ -13,3 +13,5 @@ pub mod renderers;
 pub mod highlighters;
 
 pub mod overlays;
+
+pub mod carets;

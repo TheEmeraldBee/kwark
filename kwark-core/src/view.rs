@@ -17,7 +17,7 @@ impl<S: 'static> Editor<S> {
             } = v;
 
             let grid = windows.view(|leaf, window, active, boundaries| {
-                let ctx = window.ctx(active, boundaries);
+                let ctx = window.ctx(leaf, active, boundaries);
                 let insets = match &mut window_pipeline.border {
                     Some(border) => border.insets(e, &ctx),
                     None => Edges::ZERO,
@@ -45,14 +45,23 @@ impl<S: 'static> Editor<S> {
                     .children(bottom)
             });
 
+            let editor = div()
+                .flex_col()
+                .size_full()
+                .min_w(0.0)
+                .min_h(0.0)
+                .children(top)
+                .child(div().flex_col().flex_1().min_h(0.0).child(grid.flex_1()))
+                .children(bottom);
+
+            let editor = v.editor_pipeline.wrap(e, editor);
             let overlays = v.overlays.view(e, Rect::from_size(size));
 
+            // Overlays sit outside the wrapper, so that they cover the whole window
             div()
                 .flex_col()
                 .size_full()
-                .children(top)
-                .child(div().flex_col().flex_1().min_h(0.0).child(grid.flex_1()))
-                .children(bottom)
+                .child(editor.flex_1().min_w(0.0).min_h(0.0))
                 .children(overlays)
         })
     }
@@ -74,17 +83,23 @@ impl<S: 'static> Editor<S> {
             window.set_rect(rect);
 
             if let Some(border) = &mut v.window_pipeline.border {
-                let ctx = window.ctx(active, boundaries);
+                let ctx = window.ctx(leaf, active, boundaries);
                 border.render(e, &ctx, rect, p);
             }
         });
     }
 
-    /// Draws a window's selected buffer
+    /// Draws a window's selected buffer, recording the caret of the active one
     fn paint_window(&mut self, leaf: LeafId, rect: Rect, p: &mut Painter) {
         self.with_view(|v, e| {
-            if let Some(window) = v.windows.window_mut(leaf) {
-                window.paint(&v.buffers, &mut v.pipeline, e, rect, p);
+            let active = leaf == v.windows.active_id();
+            let Some(window) = v.windows.window_mut(leaf) else {
+                return;
+            };
+
+            let caret = window.paint(&v.buffers, &mut v.pipeline, e, rect, active, p);
+            if active {
+                e.core.caret = caret;
             }
         });
     }

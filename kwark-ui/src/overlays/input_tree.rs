@@ -1,4 +1,4 @@
-use kui::{Color, Node, Rect, Shadow, div, text};
+use kui::{Color, Node, Rect, div, text};
 use kwark_core::{Editor, INPUT_TREE_FLAG};
 use kwark_render::Overlay;
 

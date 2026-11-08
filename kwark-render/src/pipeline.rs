@@ -6,7 +6,8 @@ use kwark_tree_sitter::tree::SyntaxTree;
 use ropey::Rope;
 
 use crate::{
-    Border, ElementGrid, Gutters, Highlight, Highlighters, LineCtx, Metrics, Renderers, plain_col,
+    Border, Caret, Carets, ElementGrid, Gutters, Highlight, Highlighters, LineCtx, Metrics,
+    Renderers, Wrapper, line_carets, plain_col,
 };
 
 /// The configuration for how to render a buffer to the screen
@@ -17,6 +18,7 @@ pub struct Pipeline<S> {
     pub highlighters: Highlighters<S>,
     pub renderers: Renderers<S>,
     pub gutters: Gutters<S>,
+    pub carets: Carets<S>,
 }
 
 impl<S> Default for Pipeline<S> {
@@ -34,6 +36,7 @@ impl<S> Pipeline<S> {
             highlighters: Highlighters::default(),
             renderers: Renderers::default(),
             gutters: Gutters::default(),
+            carets: Carets::default(),
         }
     }
 
@@ -48,6 +51,8 @@ impl<S> Pipeline<S> {
 pub struct Viewport {
     pub top_line: usize,
     pub bottom_line: usize,
+    /// The cell of the primary caret, when it was on screen
+    pub caret: Option<Rect>,
 }
 
 pub struct RenderArgs<'a, 'p, S> {
@@ -58,6 +63,8 @@ pub struct RenderArgs<'a, 'p, S> {
     pub primary: usize,
     pub tree: Option<&'a SyntaxTree>,
     pub area: Rect,
+    /// Whether the window has focus
+    pub active: bool,
     pub painter: &'a mut Painter<'p>,
 }
 
@@ -93,6 +100,7 @@ struct Source<'a> {
     primary: usize,
     tree: Option<&'a SyntaxTree>,
     area: Rect,
+    active: bool,
 }
 
 /// A buffer line and the rects it takes on screen
@@ -115,6 +123,7 @@ impl<S> Pipeline<S> {
             primary,
             tree,
             area,
+            active,
             painter,
         }: RenderArgs<S>,
     ) -> Viewport {
@@ -125,6 +134,7 @@ impl<S> Pipeline<S> {
             primary,
             tree,
             area,
+            active,
         };
         let metrics = self.metrics.clone();
         let rows = layout(
@@ -137,6 +147,8 @@ impl<S> Pipeline<S> {
             source,
         );
 
+        let mut primary_caret = None;
+
         for row in &rows {
             if row.gutter.size.width > 0.0 {
                 self.gutters
@@ -145,12 +157,50 @@ impl<S> Pipeline<S> {
 
             self.renderers
                 .render(state, &row.ctx, &row.hl, row.text, painter);
+
+            let carets = self.carets_of(state, row);
+            if let Some(caret) = carets.iter().find(|c| c.primary) {
+                primary_caret = Some(caret.rect);
+            }
+
+            if !carets.is_empty() {
+                painter.clip(row.text, |p| {
+                    self.carets.render(state, &row.ctx, &row.hl, &carets, p);
+                });
+            }
         }
 
         Viewport {
             top_line: rows.first().map(|r| r.ctx.line).unwrap_or(scroll_top),
             bottom_line: rows.last().map(|r| r.ctx.line).unwrap_or(scroll_top),
+            caret: primary_caret,
         }
+    }
+
+    /// Returns the cell of every caret on a row that fits on screen
+    fn carets_of(&mut self, state: &mut S, row: &Row) -> Vec<Caret> {
+        let (ctx, hl, area) = (&row.ctx, &row.hl, row.text);
+        let char_width = ctx.metrics.char_width;
+
+        line_carets(ctx)
+            .into_iter()
+            .filter_map(|(col, primary)| {
+                let at = self.renderers.cell(state, ctx, hl, area, col)?;
+
+                // The next column's left edge, unless it wraps or falls off screen
+                let width = self
+                    .renderers
+                    .cell(state, ctx, hl, area, col + 1)
+                    .filter(|next| next.y == at.y && next.x > at.x)
+                    .map_or(char_width, |next| next.x - at.x);
+
+                Some(Caret {
+                    col,
+                    rect: Rect::new(at.x, at.y, width, ctx.metrics.line_height),
+                    primary,
+                })
+            })
+            .collect()
     }
 
     /// Line and column under `point`, None when it is off the text
@@ -178,6 +228,7 @@ impl<S> Pipeline<S> {
             primary,
             tree,
             area,
+            active: false,
         };
         let metrics = self.metrics.clone();
         let rows = layout(
@@ -225,6 +276,7 @@ impl<S> Pipeline<S> {
             primary,
             tree,
             area,
+            active: false,
         };
         let metrics = self.metrics.clone();
         let rows = layout(
@@ -263,6 +315,7 @@ fn layout<'a, S>(
         primary,
         tree,
         area,
+        active,
     } = source;
 
     let gutter_width = gutters.measure(metrics).min(area.size.width);
@@ -283,6 +336,7 @@ fn layout<'a, S>(
             primary,
             tree,
             metrics,
+            active,
         };
 
         let hl = highlighters.resolve(state, &ctx);
@@ -340,6 +394,7 @@ impl<S, C> WindowPipeline<S, C> {
 pub struct EditorPipeline<S, C> {
     pub top: ElementGrid<S, C>,
     pub bottom: ElementGrid<S, C>,
+    wrapper: Option<Box<dyn Wrapper<S>>>,
 }
 
 impl<S, C> Default for EditorPipeline<S, C> {
@@ -347,6 +402,7 @@ impl<S, C> Default for EditorPipeline<S, C> {
         Self {
             top: ElementGrid::default(),
             bottom: ElementGrid::default(),
+            wrapper: None,
         }
     }
 }
@@ -355,6 +411,26 @@ impl<S: 'static, C> EditorPipeline<S, C> {
     /// Returns the editor's top and bottom rows
     pub fn view(&mut self, state: &mut S, ctx: &C) -> (Vec<Node<S>>, Vec<Node<S>>) {
         (self.top.view(state, ctx), self.bottom.view(state, ctx))
+    }
+
+    /// Sets the node that the editor sits inside, replacing any before it
+    pub fn set_wrapper(&mut self, wrapper: impl Wrapper<S> + 'static) -> &mut Self {
+        self.wrapper = Some(Box::new(wrapper));
+        self
+    }
+
+    /// Removes the wrapper, so that the editor fills the window
+    pub fn clear_wrapper(&mut self) -> &mut Self {
+        self.wrapper = None;
+        self
+    }
+
+    /// Returns the editor's tree inside the wrapper, if there is one
+    pub fn wrap(&mut self, state: &mut S, editor: Node<S>) -> Node<S> {
+        match &mut self.wrapper {
+            Some(wrapper) => wrapper.wrap(state, editor),
+            None => editor,
+        }
     }
 }
 
@@ -440,6 +516,74 @@ mod test {
             area,
             point,
         })
+    }
+
+    /// Returns the carets on each line for one cursor at a line and column
+    fn carets(text: &str, line: usize, col: usize) -> Vec<Vec<Caret>> {
+        let mut entry = kwark_text::BufferEntry::new_scratch("t");
+        entry.buffer.insert(0, 0, text).unwrap();
+
+        let mut set = kwark_text::CursorSet::new();
+        set.set(&entry.buffer, line, col, &kwark_text::CursorOptions::new());
+
+        let mut pipeline = Pipeline::<()>::default();
+        let metrics = pipeline.metrics.clone();
+        let source = Source {
+            rope: entry.buffer.rope(),
+            scroll_top: 0,
+            cursors: set.cursors(),
+            primary: set.primary(),
+            tree: None,
+            area: area(&pipeline),
+            active: true,
+        };
+        let rows = layout(
+            &mut pipeline.highlighters,
+            &mut pipeline.renderers,
+            &pipeline.gutters,
+            &pipeline.tab.clone(),
+            &metrics,
+            &mut (),
+            source,
+        );
+
+        rows.iter()
+            .map(|row| pipeline.carets_of(&mut (), row))
+            .collect()
+    }
+
+    #[test]
+    fn carets_sit_on_the_cell_of_their_column() {
+        let pipeline = Pipeline::<()>::default();
+        let m = &pipeline.metrics;
+
+        let lines = carets("ab\tc\nxy", 0, 2);
+        assert_eq!(lines[1], []);
+
+        let caret = lines[0][0];
+        assert!(caret.primary);
+        assert_eq!(caret.col, 2);
+        assert_eq!(caret.rect.left(), 2.0 * m.char_width);
+        assert!((caret.rect.size.width - 3.0 * m.char_width).abs() < 0.01);
+        assert_eq!(caret.rect.size.height, m.line_height);
+    }
+
+    #[test]
+    fn carets_cover_wide_characters_and_line_ends() {
+        let pipeline = Pipeline::<()>::default();
+        let m = &pipeline.metrics;
+
+        let wide = carets("名x", 0, 0)[0][0];
+        assert!(wide.rect.size.width > m.char_width * 1.5);
+
+        // Past the last character of the file, with no newline to sit on
+        let end = carets("ab", 0, 2)[0][0];
+        assert_eq!(end.col, 2);
+        assert_eq!(end.rect.size.width, m.char_width);
+
+        let empty = carets("ab\n\ncd", 1, 0);
+        assert_eq!(empty[1][0].rect.left(), 0.0);
+        assert_eq!(empty[1][0].rect.top(), m.line_height);
     }
 
     #[test]

@@ -223,6 +223,7 @@ impl Buffer {
         painter: &mut kui::Painter<'_>,
         rect: kui::Rect,
         scroll_top: usize,
+        active: bool,
     ) -> Viewport {
         match self {
             Self::Text {
@@ -236,6 +237,7 @@ impl Buffer {
                     cursors: carets,
                     tree: tree.as_ref(),
                     area: rect,
+                    active,
                     painter,
 
                     state,

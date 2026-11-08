@@ -21,3 +21,9 @@ pub use pipeline::*;
 
 mod overlay;
 pub use overlay::*;
+
+mod caret;
+pub use caret::*;
+
+mod wrapper;
+pub use wrapper::*;

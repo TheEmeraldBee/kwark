@@ -61,6 +61,8 @@ pub struct Core<S: 'static> {
     /// The pointer position of the most recent mouse event, read by chords bound to a mouse press
     pub mouse: Point,
     pub running: Running,
+    /// The cell of the active window's primary caret, as it was last drawn
+    pub caret: Option<kui::Rect>,
     /// Options for the window, read once when it opens
     pub window_config: WindowOptions,
 
@@ -89,6 +91,7 @@ impl<S: 'static> Core<S> {
             log: LogState::default(),
             mouse: Point::default(),
             running: Running(true),
+            caret: None,
             window_config: WindowOptions {
                 title: "kwark".into(),
                 size: Size::new(1200.0, 800.0),
@@ -236,8 +239,9 @@ impl<S: 'static> Editor<S> {
         // Placeholders stay detached from the real bus
         let detached = kwark_bus::channel().0;
 
-        // The stand-in keeps the metrics, so code that runs meanwhile measures the same way
-        let stand_in = Pipeline::new(self.core.pipeline.metrics.clone());
+        // The stand-in keeps the metrics and carets, so code that runs meanwhile measures and styles the same way
+        let mut stand_in = Pipeline::new(self.core.pipeline.metrics.clone());
+        stand_in.carets = self.core.pipeline.carets.clone();
 
         let mut view = View {
             buffers: std::mem::replace(

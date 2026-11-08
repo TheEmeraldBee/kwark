@@ -4,7 +4,7 @@ pub use layout::*;
 use std::ops::{Deref, DerefMut};
 
 use kui::{Painter, Point, Rect};
-use kwark_buffer as buffer;
+use kwark_buffer::{self as buffer, ID};
 use kwark_render::{Boundaries, Pipeline, Viewport};
 
 pub type WindowPipeline<S> = kwark_render::WindowPipeline<S, WindowCtx>;
@@ -42,12 +42,13 @@ pub struct BufferView {
 
 /// A buffer's info that's open in the window
 pub struct Tab {
-    pub name: String,
+    pub id: ID,
     pub primary: bool,
 }
 
 /// Context passed into each window
 pub struct WindowCtx {
+    pub id: LeafId,
     pub active: bool,
     pub boundaries: Boundaries,
     pub tabs: Vec<Tab>,
@@ -140,17 +141,18 @@ impl Window {
     }
 
     /// Returns the context that the window's border and rows draw with
-    pub fn ctx(&self, active: bool, boundaries: Boundaries) -> WindowCtx {
+    pub fn ctx(&self, id: LeafId, active: bool, boundaries: Boundaries) -> WindowCtx {
         let tabs = self
             .bufs
             .iter()
             .map(|(primary, buf)| Tab {
-                name: buf.to_string(),
+                id: buf.clone(),
                 primary,
             })
             .collect();
 
         WindowCtx {
+            id,
             active,
             boundaries,
             tabs,
@@ -162,28 +164,28 @@ impl Window {
         self.rect = Some(rect);
     }
 
-    /// Draws the selected buffer into the content rect
+    /// Draws the selected buffer into the content rect, returning the cell of its primary caret
     pub fn paint<S>(
         &mut self,
         storage: &buffer::Storage,
         pipeline: &mut Pipeline<S>,
         state: &mut S,
         rect: Rect,
+        active: bool,
         painter: &mut Painter,
-    ) {
+    ) -> Option<Rect> {
         self.content_rect = Some(rect);
 
-        let Some(id) = self.bufs.selected() else {
-            return;
-        };
-        let Some(buf) = storage.get(&id) else {
-            return;
-        };
+        let id = self.bufs.selected()?;
+        let buf = storage.get(&id)?;
 
-        let viewport = buf.render(pipeline, state, painter, rect, self.scroll_shown());
+        let scroll = self.scroll_shown();
+        let viewport = buf.render(pipeline, state, painter, rect, scroll, active);
 
         if let Some(view) = self.bufs.state_mut() {
             view.viewport = Some(viewport);
         }
+
+        viewport.caret
     }
 }

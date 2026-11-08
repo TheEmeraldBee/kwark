@@ -1,27 +1,17 @@
+use super::Caret;
 use super::layout::{Content, Frame};
 use crate::{Color, Painter, Point, Rect, Span};
 
 impl<S> Frame<S> {
-    /// Draws the whole frame, with hover looks for the nodes above `hit`
-    pub fn paint(&mut self, painter: &mut Painter, state: &mut S, hit: Option<usize>) {
+    /// Draws the whole frame
+    pub fn paint(&mut self, painter: &mut Painter, state: &mut S) {
         if !self.nodes.is_empty() {
-            self.paint_node(0, painter, state, hit, Color::WHITE);
+            self.paint_node(0, painter, state, Color::WHITE);
         }
     }
 
-    fn paint_node(
-        &mut self,
-        index: usize,
-        p: &mut Painter,
-        state: &mut S,
-        hit: Option<usize>,
-        color: Color,
-    ) {
-        let node = &self.nodes[index];
-        let visual = match &node.hover {
-            Some(hover) if self.is_hovered(index, hit) => hover(node.visual),
-            _ => node.visual,
-        };
+    fn paint_node(&mut self, index: usize, p: &mut Painter, state: &mut S, color: Color) {
+        let visual = self.nodes[index].visual;
 
         if visual.opacity <= 0.0 {
             return;
@@ -29,10 +19,10 @@ impl<S> Frame<S> {
 
         if visual.opacity < 1.0 {
             p.opacity(visual.opacity, |p| {
-                self.paint_body(index, p, state, hit, color, visual);
+                self.paint_body(index, p, state, color, visual);
             });
         } else {
-            self.paint_body(index, p, state, hit, color, visual);
+            self.paint_body(index, p, state, color, visual);
         }
     }
 
@@ -41,7 +31,6 @@ impl<S> Frame<S> {
         index: usize,
         p: &mut Painter,
         state: &mut S,
-        hit: Option<usize>,
         color: Color,
         visual: super::Visual,
     ) {
@@ -82,24 +71,17 @@ impl<S> Frame<S> {
         }
 
         if node.clips {
-            p.clip(rect, |p| self.paint_inside(index, p, state, hit, color));
+            p.clip(rect, |p| self.paint_inside(index, p, state, color));
         } else {
-            self.paint_inside(index, p, state, hit, color);
+            self.paint_inside(index, p, state, color);
         }
     }
 
     /// Draws a node's content and children
-    fn paint_inside(
-        &mut self,
-        index: usize,
-        p: &mut Painter,
-        state: &mut S,
-        hit: Option<usize>,
-        color: Color,
-    ) {
+    fn paint_inside(&mut self, index: usize, p: &mut Painter, state: &mut S, color: Color) {
         let node = &mut self.nodes[index];
         let inner = node.inner;
-        let origin = Point::new(inner.left(), inner.top());
+        let caret = node.caret;
 
         match &mut node.content {
             Content::None => {}
@@ -108,20 +90,96 @@ impl<S> Frame<S> {
                     .iter()
                     .map(|(t, s)| Span::new(t, s.clone().color(color)))
                     .collect();
-                let line = p.fonts().line(&spans);
-                p.text(&line, origin);
+                paint_line(&spans, caret, inner, p);
             }
             Content::Rich(spans) => {
                 let spans: Vec<Span> = spans.iter().map(|(t, s)| Span::new(t, s.clone())).collect();
-                let line = p.fonts().line(&spans);
-                p.text(&line, origin);
+                paint_line(&spans, caret, inner, p);
             }
             Content::Canvas(paint) => paint(state, inner, p),
         }
 
         let children: Vec<usize> = self.children(index).collect();
         for child in children {
-            self.paint_node(child, p, state, hit, color);
+            self.paint_node(child, p, state, color);
         }
+    }
+}
+
+/// Draws a line of spans with its caret, shifted left so that the caret stays inside `inner`
+fn paint_line(spans: &[Span], caret: Option<Caret>, inner: Rect, p: &mut Painter) {
+    let line = p.fonts().line(spans);
+
+    let Some(caret) = caret else {
+        p.text(&line, Point::new(inner.left(), inner.top()));
+        return;
+    };
+
+    let end_style = spans.last().map(|s| s.style.clone()).unwrap_or_default();
+    let end_width = p.fonts().char_width(&end_style);
+    let cell = caret.cell(spans, &line, end_width);
+    let shift = (cell.right() - inner.size.width).max(0.0);
+
+    let origin = Point::new(inner.left() - shift, inner.top());
+    p.text(&line, origin);
+
+    let at = Rect::new(
+        origin.x + cell.left(),
+        origin.y,
+        cell.size.width,
+        cell.size.height,
+    );
+    caret.paint(spans, at, p);
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        CaretShape, CaretStyle, Color, Fonts, Node, Painter, Size, div, node::Frame, text,
+    };
+
+    /// Returns how many draw commands a node paints
+    fn draws(node: Node<()>) -> usize {
+        let mut fonts = Fonts::new();
+        let mut taffy = taffy::TaffyTree::new();
+        let size = Size::new(400.0, 40.0);
+        let root = div().size_full().child(node);
+        let mut frame = Frame::build(root, None, size, &mut fonts, &mut taffy).unwrap();
+
+        let mut scene = vello::Scene::new();
+        let mut p = Painter::new(&mut scene, &mut fonts, 1.0, size, None);
+        frame.paint(&mut p, &mut ());
+        scene.encoding().draw_tags.len()
+    }
+
+    /// Returns the width of a node laid out inside a wide row
+    fn width(node: Node<()>) -> f32 {
+        let mut fonts = Fonts::new();
+        let mut taffy = taffy::TaffyTree::new();
+        let root = div().size_full().child(node);
+        let size = Size::new(400.0, 40.0);
+        let frame = Frame::build(root, None, size, &mut fonts, &mut taffy).unwrap();
+        frame.nodes[1].rect.size.width
+    }
+
+    #[test]
+    fn text_with_a_caret_leaves_room_for_the_end_cell() {
+        let style = CaretStyle::new(CaretShape::Bar(2.0), Color::WHITE);
+        let char_width = Fonts::new().char_width(&Default::default());
+
+        let plain = width(text(":abc").truncate());
+        let with_caret = width(text(":abc").truncate().caret(4, style));
+
+        // Layout rounds to whole pixels
+        assert!((with_caret - plain - char_width).abs() <= 1.0);
+    }
+
+    #[test]
+    fn text_carets_draw_within_and_past_the_text() {
+        let style = CaretStyle::new(CaretShape::Underline(2.0), Color::WHITE);
+        let plain = draws(text(":abc").truncate());
+
+        assert_eq!(draws(text(":abc").truncate().caret(1, style)), plain + 1);
+        assert_eq!(draws(text(":abc").truncate().caret(4, style)), plain + 1);
     }
 }

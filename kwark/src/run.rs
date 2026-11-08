@@ -29,6 +29,8 @@ struct Kwark<S: 'static> {
     scroll_rest: f32,
     /// Text from the last key press, so that the same text from the input method is not typed twice
     key_text: Option<String>,
+    /// The caret cell last given to the input method
+    ime_area: Option<kui::Rect>,
 }
 
 impl<S: 'static> Kwark<S> {
@@ -39,6 +41,7 @@ impl<S: 'static> Kwark<S> {
             dragging: false,
             scroll_rest: 0.0,
             key_text: None,
+            ime_area: None,
         }
     }
 
@@ -50,6 +53,14 @@ impl<S: 'static> Kwark<S> {
         if !core.running.0 {
             cx.quit();
             return;
+        }
+
+        // The input method's popup follows the caret
+        if core.caret != self.ime_area {
+            if let Some(area) = core.caret {
+                cx.set_ime_area(area);
+            }
+            self.ime_area = core.caret;
         }
 
         let now = Instant::now();
@@ -464,6 +475,107 @@ mod test {
         assert_eq!(press(kui::Key::Char('A'), true), chord('a', shift));
         assert_eq!(press(kui::Key::Char(' '), true), chord(' ', shift));
         assert_eq!(press(kui::Key::Char(';'), false), chord(';', none));
+    }
+
+    #[test]
+    pub fn clicks_land_in_every_split() {
+        let mut editor = crate::init::<Full>().unwrap();
+        let text = "line\n".repeat(200);
+        let mut entry = BufferEntry::new_scratch("a");
+        entry.buffer.insert(0, 0, text).unwrap();
+        let id = editor.core.buffers.insert(entry);
+        editor.core.windows.active_mut().select(id.clone());
+
+        editor.execute("split dir=right").unwrap();
+        editor.core.windows.active_mut().select(id.clone());
+        editor.execute("split dir=down").unwrap();
+        editor.core.windows.active_mut().select(id.clone());
+        drain(&mut editor);
+
+        let core = &mut editor.core;
+        core.buffers.update_all(&mut core.languages).unwrap();
+        editor.core.windows.update_all(&editor.core.buffers);
+
+        let size = kui::Size::new(1200.0, 800.0);
+        let fonts = editor.core.pipeline.metrics.fonts.clone();
+        let root = editor.view(size);
+        kui::paint_offscreen(root, size, &fonts, &mut editor).unwrap();
+
+        let leaves: Vec<_> = editor
+            .core
+            .windows
+            .leaves_mut()
+            .map(|(leaf, w)| (leaf, w.content_rect()))
+            .collect();
+
+        for (leaf, content) in leaves {
+            let content = content.expect("every window paints its content");
+            let center = kui::Point::new(
+                content.left() + content.size.width / 2.0,
+                content.top() + content.size.height / 2.0,
+            );
+
+            let hit = editor.hit_test(center).map(|(l, _, _)| l);
+            assert_eq!(
+                hit,
+                Some(leaf),
+                "a click in the middle of {leaf:?} lands there"
+            );
+        }
+    }
+
+    #[test]
+    pub fn wrapped_windows_sit_inside_the_wrapper() {
+        let mut editor = crate::init::<Full>().unwrap();
+        let mut entry = BufferEntry::new_scratch("a");
+        entry.buffer.insert(0, 0, "line\n".repeat(200)).unwrap();
+        let id = editor.core.buffers.insert(entry);
+        editor.core.windows.active_mut().select(id);
+
+        let pad = 40.0;
+        editor.core.editor_pipeline.set_wrapper(
+            move |_: &mut Editor<Full>, inner: Node<Editor<Full>>| kui::div().p(pad).child(inner),
+        );
+
+        let core = &mut editor.core;
+        core.buffers.update_all(&mut core.languages).unwrap();
+        editor.core.windows.update_all(&editor.core.buffers);
+
+        let size = kui::Size::new(1200.0, 800.0);
+        let fonts = editor.core.pipeline.metrics.fonts.clone();
+        let root = editor.view(size);
+        kui::paint_offscreen(root, size, &fonts, &mut editor).unwrap();
+
+        let (leaf, content) = editor
+            .core
+            .windows
+            .leaves_mut()
+            .map(|(leaf, w)| (leaf, w.content_rect()))
+            .next()
+            .unwrap();
+        let content = content.expect("the window paints its content");
+
+        assert!(content.left() >= pad && content.top() >= pad);
+        assert!(content.right() <= size.width - pad);
+        assert!(content.bottom() <= size.height - pad);
+
+        let center = kui::Point::new(
+            content.left() + content.size.width / 2.0,
+            content.top() + content.size.height / 2.0,
+        );
+        assert_eq!(editor.hit_test(center).map(|(l, _, _)| l), Some(leaf));
+    }
+
+    #[test]
+    pub fn carets_style_while_the_view_builds() {
+        let mut editor = crate::init::<Empty>().unwrap();
+        editor
+            .core
+            .pipeline
+            .carets
+            .set(crate::ui::carets::Shaped::default());
+
+        assert!(editor.with_view(|_, e| e.core.pipeline.carets.is_set()));
     }
 
     #[test]

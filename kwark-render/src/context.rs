@@ -59,4 +59,6 @@ pub struct LineCtx<'a> {
     pub primary: usize,
     pub tree: Option<&'a SyntaxTree>,
     pub metrics: &'a Metrics,
+    /// Whether the window has focus, always false outside of drawing
+    pub active: bool,
 }

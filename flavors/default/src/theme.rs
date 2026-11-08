@@ -72,6 +72,7 @@ pub fn init_theme(theme: &mut Theme) {
         ("bar.window.selected", f(GREEN)),
         ("bar.tab", f(TEXT)),
         ("bar.tab.primary", f(MAUVE)),
+        ("bar.tab.hovered", f(MAROON)),
         ("bar.clock", f(PINK)),
         ("bar.frames", f(OVERLAY2)),
         ("bar.spinner", f(MAUVE)),
@@ -80,6 +81,7 @@ pub fn init_theme(theme: &mut Theme) {
         ("mode.normal", f(TEXT_DARK).bg(TEAL)),
         ("mode.insert", f(TEXT_DARK).bg(MAUVE)),
         ("mode.command", f(TEXT_DARK).bg(LAVENDER)),
+        ("statusline.cursor", f(TEXT)),
         ("statusline.command", f(MAUVE)),
         ("statusline.log.error", f(MAROON)),
         ("statusline.log.warn", f(RED)),
@@ -91,6 +93,4 @@ pub fn init_theme(theme: &mut Theme) {
         ("popup", f(TEXT).bg(MANTLE)),
         ("popup.border", f(OVERLAY2)),
     ]);
-
-    theme.set("freda", f(LAVENDER));
 }

@@ -1,6 +1,7 @@
 use kui::{Node, text};
 use kwark_render::Element;
 
+use kui::*;
 use kwark_core::Editor;
 
 /// The current input mode
@@ -12,6 +13,6 @@ impl<S: 'static, C> Element<Editor<S>, C> for Mode {
         let style = state.core.theme.get(&format!("mode.{mode}"));
         let label = format!(" {} ", mode.to_ascii_uppercase());
 
-        Some(style.apply(text(label)))
+        Some(style.apply(div().rounded(6.0).child(text(label))))
     }
 }
