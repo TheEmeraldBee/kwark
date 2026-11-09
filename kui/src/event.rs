@@ -1,6 +1,6 @@
 use crate::{Point, Size};
 
-/// An input or window event, with positions in logical pixels
+/// An input or window event, with logical positions
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// A key press or repeat
@@ -50,17 +50,16 @@ pub struct KeyEvent {
     pub repeat: bool,
 }
 
-/// A key by its meaning in the current layout
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
-    /// A key that types a character, space included
+    /// A key that types a character
     Char(char),
     Named(NamedKey),
-    /// A key with no name that kui knows
+    /// A key with no name that kui understands
     Unknown,
 }
 
-/// A key that types no character
+/// A key that doesn't output a character
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NamedKey {
     Enter,
@@ -77,7 +76,7 @@ pub enum NamedKey {
     End,
     PageUp,
     PageDown,
-    /// A function key by its number
+    /// A function key
     F(u8),
 }
 
@@ -87,8 +86,7 @@ pub struct Mods {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
-    /// The Super, Windows, or Command key
-    pub logo: bool,
+    pub super_: bool,
 }
 
 /// A mouse button
@@ -132,7 +130,7 @@ impl From<winit::keyboard::ModifiersState> for Mods {
             shift: state.shift_key(),
             ctrl: state.control_key(),
             alt: state.alt_key(),
-            logo: state.super_key(),
+            super_: state.super_key(),
         }
     }
 }

@@ -106,7 +106,7 @@ impl<S> Frame<S> {
     }
 }
 
-/// Draws a line of spans with its caret, shifted left so that the caret stays inside `inner`
+/// Draws a line of spans with its caret
 fn paint_line(spans: &[Span], caret: Option<Caret>, inner: Rect, p: &mut Painter) {
     let line = p.fonts().line(spans);
 
@@ -138,7 +138,6 @@ mod test {
         CaretShape, CaretStyle, Color, Fonts, Node, Painter, Size, div, node::Frame, text,
     };
 
-    /// Returns how many draw commands a node paints
     fn draws(node: Node<()>) -> usize {
         let mut fonts = Fonts::new();
         let mut taffy = taffy::TaffyTree::new();
@@ -152,7 +151,6 @@ mod test {
         scene.encoding().draw_tags.len()
     }
 
-    /// Returns the width of a node laid out inside a wide row
     fn width(node: Node<()>) -> f32 {
         let mut fonts = Fonts::new();
         let mut taffy = taffy::TaffyTree::new();

@@ -160,6 +160,7 @@ impl<S: Has<Plugin> + 'static> kwark_core::Plugin<S> for Plugin {
 
         command.bind(&["escape"], "Exit command mode", |e| {
             let (core, command) = e.split::<Plugin>();
+            command.text.clear();
             core.input.set_mode(command.return_mode());
 
             Ok(())

@@ -10,12 +10,11 @@ const EVERYTHING: Rect = Rect::new(-1.0e9, -1.0e9, 2.0e9, 2.0e9);
 pub(crate) enum Content<S> {
     None,
     Text(Vec<(String, TextStyle)>),
-    /// Spans that keep their own colors
     Rich(Vec<(String, TextStyle)>),
     Canvas(super::PaintFn<S>),
 }
 
-/// One node of a frame, in tree order
+/// One node of a frame
 pub(crate) struct Flat<S> {
     pub parent: Option<usize>,
     /// One past the last node in this subtree
@@ -47,7 +46,7 @@ pub(crate) enum Segment {
     Id(u64),
 }
 
-/// A laid out tree, kept between frames for paint and input
+/// A laid out tree
 pub(crate) struct Frame<S> {
     pub nodes: Vec<Flat<S>>,
 }

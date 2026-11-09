@@ -1,7 +1,3 @@
-/*!
-The GUI layer that kwark draws with: windows, the event loop, text, layout, and paint
-*/
-
 mod app;
 pub use app::*;
 

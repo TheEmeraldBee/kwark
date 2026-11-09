@@ -32,7 +32,7 @@ impl<S> Frame<S> {
         hit.is_some_and(|h| self.ancestors(h).any(|i| self.nodes[i].hover))
     }
 
-    /// Returns the steps from the root to a node, stable across frames
+    /// Returns the steps from the root to a node
     pub fn path(&self, index: usize) -> Vec<Segment> {
         let mut path: Vec<Segment> = self
             .ancestors(index)

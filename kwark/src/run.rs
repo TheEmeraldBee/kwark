@@ -305,7 +305,7 @@ fn key_mods(mods: Mods) -> KeyModifiers {
         (mods.shift, KeyModifiers::SHIFT),
         (mods.ctrl, KeyModifiers::CONTROL),
         (mods.alt, KeyModifiers::ALT),
-        (mods.logo, KeyModifiers::SUPER),
+        (mods.super_, KeyModifiers::SUPER),
     ] {
         if held {
             out |= flag;

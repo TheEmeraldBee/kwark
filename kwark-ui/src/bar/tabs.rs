@@ -43,6 +43,8 @@ impl<S: 'static> Element<Editor<S>, WindowCtx> for Tabs {
                             s.core.windows.focus(id);
 
                             s.core.windows.active_mut().select(tab_id.clone());
+
+                            s.core.redraw.request();
                         }),
                 ),
             );

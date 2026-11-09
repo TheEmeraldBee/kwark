@@ -1,4 +1,4 @@
-/// An sRGB color with straight alpha
+/// An sRGB color with alpha
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: u8,
@@ -23,7 +23,7 @@ impl Color {
         Self { r, g, b, a }
     }
 
-    /// Returns the color with its alpha scaled by `opacity` (0 to 1)
+    /// Returns the color with its alpha scaled (multiplied) by `opacity` (0 to 1)
     pub fn opacity(self, opacity: f32) -> Self {
         let a = (self.a as f32 * opacity.clamp(0.0, 1.0)).round() as u8;
         Self { a, ..self }

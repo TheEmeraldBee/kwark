@@ -40,7 +40,7 @@ impl Family {
     }
 }
 
-/// The look of a run of text
+/// The look of a of some text
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextStyle {
     pub family: Family,
@@ -136,7 +136,7 @@ impl<'a> Span<'a> {
 pub struct TextRendering {
     /// Whether glyph outlines snap to the pixel grid
     pub hinting: bool,
-    /// Extra stroke weight in logical pixels, for fonts that render too thin
+    /// Extra stroke weight in logical pixels
     pub embolden: f32,
 }
 
@@ -149,7 +149,7 @@ impl Default for TextRendering {
     }
 }
 
-/// The font database and the cache of shaped lines, shared by every clone
+/// The font database and the cache of shaped lines
 #[derive(Clone, Default)]
 pub struct Fonts(Rc<RefCell<FontsInner>>);
 
@@ -210,7 +210,7 @@ struct FontsInner {
     layouts: LayoutContext<Color>,
     cache: LineCache,
     rendering: TextRendering,
-    /// Joined span text, kept to reuse its allocation
+    /// Joined span text
     text: String,
 }
 

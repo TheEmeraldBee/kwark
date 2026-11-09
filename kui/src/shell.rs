@@ -18,41 +18,36 @@ use crate::{
     Painter, Point, Proxy, ScrollDelta, Size,
 };
 
-/// One open window and what it draws with
+/// A window's state
 struct WindowState<S> {
     window: Arc<Window>,
     surface: RenderSurface<'static>,
     scene: Scene,
     background: Color,
-    /// The pointer position in logical pixels, while it is over the window
     pointer: Option<Point>,
     mods: Mods,
     taffy: TaffyTree<usize>,
-    /// The last frame, for input until the next one
     frame: Option<Frame<S>>,
-    /// The topmost node under the pointer in the last frame
     hit: Option<usize>,
-    /// The path to `hit`, which the next frame applies hover along
     hovered: Option<Vec<Segment>>,
-    /// The path to the node that took the last mouse down
     pressed: Option<Vec<Segment>>,
-    /// The pointer icon the app set for places where no node sets one
     app_cursor: CursorIcon,
     cursor: CursorIcon,
 }
 
 impl<S> WindowState<S> {
+    /// The scale factor of the window
     fn scale(&self) -> f64 {
         self.window.scale_factor()
     }
 
-    /// Returns the inner size in logical pixels
+    /// Returns the inner logical size
     fn size(&self) -> Size {
         let size = self.window.inner_size().to_logical::<f32>(self.scale());
         Size::new(size.width, size.height)
     }
 
-    /// Shows the pointer icon of the hovered nodes, or the app's icon
+    /// Shows the pointer icon of the hovered nodes, or the default
     fn refresh_cursor(&mut self) {
         let icon = self
             .frame
@@ -66,7 +61,7 @@ impl<S> WindowState<S> {
         }
     }
 
-    /// Moves hover to the node under the pointer, asking for a frame if a look changes
+    /// Moves hover to the node under the pointer
     fn update_hover(&mut self, cx: &mut Cx) {
         let Some(frame) = &self.frame else {
             return;
@@ -82,7 +77,7 @@ impl<S> WindowState<S> {
         self.refresh_cursor();
     }
 
-    /// Sends a mouse event to the node it lands on, returning whether a node took it
+    /// Sends a mouse event to the node it lands on, returning whether a node consumed it
     fn dispatch(&mut self, event: &Event, state: &mut S, cx: &mut Cx) -> bool {
         match *event {
             Event::MouseMove { .. } | Event::MouseLeave => {
@@ -146,7 +141,7 @@ impl<A: App> Shell<A> {
         }
     }
 
-    /// Opens the app's window and adds it to the window map
+    /// Opens the window and adds it to the window map
     fn open(&mut self, event_loop: &ActiveEventLoop) -> Result<WindowId, Error> {
         let options = self.app.window();
         let attributes = Window::default_attributes()
@@ -209,12 +204,12 @@ impl<A: App> Shell<A> {
         event_loop.exit();
     }
 
-    /// Returns the first open window
+    /// Returns the primary window (the first one that was opened)
     fn main_window(&self) -> Option<WindowId> {
         self.windows.keys().next().copied()
     }
 
-    /// Runs app code with a `Cx` for a window, then applies what the code asked for
+    /// Runs the app's function, passing state and context and handles what Cx was asked
     fn with_cx<R>(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -241,7 +236,7 @@ impl<A: App> Shell<A> {
         Some(result)
     }
 
-    /// Gives an event to the node it lands on, or else to the app
+    /// Gives an event to the node it lands on, or hands it to the app if nothing handled it.
     fn send(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: Event) {
         self.with_cx(event_loop, id, |app, state, cx| {
             if !state.dispatch(&event, app.state(), cx) {
@@ -250,7 +245,7 @@ impl<A: App> Shell<A> {
         });
     }
 
-    /// Builds, lays out, paints, and shows one frame
+    /// Builds and draws a whole frame
     fn redraw(&mut self, event_loop: &ActiveEventLoop, id: WindowId) {
         let Some(root) = self.with_cx(event_loop, id, |app, _, cx| app.view(cx)) else {
             return;
@@ -356,7 +351,7 @@ fn translate<S>(state: &mut WindowState<S>, event: &WindowEvent) -> Option<Event
             let text = event
                 .text
                 .as_ref()
-                .filter(|t| !mods.ctrl && !mods.logo && !t.chars().any(char::is_control))
+                .filter(|t| !mods.ctrl && !mods.super_ && !t.chars().any(char::is_control))
                 .map(|t| t.to_string());
 
             Some(Event::Key(KeyEvent {

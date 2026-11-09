@@ -467,8 +467,11 @@ fn main() -> anyhow::Result<()> {
 
     let metrics = &mut editor.core.pipeline.metrics;
 
-    *metrics =
-        metrics.with_text(TextStyle::default().family(Family::Named("Hack Nerd Font Mono".into())));
+    *metrics = metrics.with_text(
+        TextStyle::default()
+            .family(Family::Named("Hack Nerd Font Mono".into()))
+            .size(16.0),
+    );
 
     metrics.fonts.set_hinting(true);
     metrics.fonts.set_embolden(0.02);

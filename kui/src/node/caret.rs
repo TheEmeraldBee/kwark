@@ -1,24 +1,20 @@
 use crate::{Color, Painter, Point, Rect, Span, TextLayout, TextStyle};
 
-/// How a caret looks
+/// How a caret looks, numbers in the structs are pixel widths of the lines
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CaretShape {
-    /// A filled cell, with its character drawn in the caret's text color
     Block,
-    /// A vertical line at the left of the cell, this many pixels wide
     Bar(f32),
-    /// A line under the cell, this many pixels tall
     Underline(f32),
-    /// An outline of the cell, with lines this many pixels wide
     Hollow(f32),
 }
 
-/// The shape and colors of a caret
+/// The style of a caret
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CaretStyle {
     pub shape: CaretShape,
     pub color: Color,
-    /// The color of the character under a block
+    /// The color of the text under a block
     pub text: Color,
 }
 
@@ -36,7 +32,7 @@ impl CaretStyle {
         self
     }
 
-    /// Draws the caret over a cell, given the character under it and that character's style
+    /// Draws the caret over a cell
     pub fn paint(&self, cell: Rect, under: Option<(char, &TextStyle)>, p: &mut Painter) {
         match self.shape {
             CaretShape::Block => {
@@ -97,7 +93,7 @@ impl Caret {
     }
 }
 
-/// Returns the character at a char index across spans, with its span's style
+/// Returns the character at a char index across spans, with its style
 fn char_at<'a>(spans: &'a [Span], index: usize) -> Option<(char, &'a TextStyle)> {
     let mut rest = index;
     for span in spans {

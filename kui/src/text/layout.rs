@@ -16,7 +16,7 @@ impl TextLayout {
         &self.layout
     }
 
-    /// Returns the width, counting trailing whitespace
+    /// Returns the width, including trailing whitespace
     pub fn width(&self) -> f32 {
         self.layout.full_width()
     }

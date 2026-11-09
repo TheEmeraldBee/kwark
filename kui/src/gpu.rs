@@ -21,14 +21,14 @@ const PREMULTIPLY: BlendState = BlendState {
     alpha: BlendComponent::REPLACE,
 };
 
-/// The GPU device, shared by every window
+/// The GPU device
 pub(crate) struct Gpu {
     context: RenderContext,
-    /// One renderer per device, indexed like `context.devices`
     renderers: Vec<Option<Renderer>>,
 }
 
 impl Gpu {
+    /// Generates a new empty GPU device
     pub fn new() -> Self {
         Self {
             context: RenderContext::new(),
@@ -36,7 +36,7 @@ impl Gpu {
         }
     }
 
-    /// Returns a surface for the window at its current size, see-through where alpha is below one if `transparent`
+    /// Returns a surface for the window at its current size
     pub fn surface(
         &mut self,
         window: Arc<Window>,
@@ -74,7 +74,7 @@ impl Gpu {
         Ok(surface)
     }
 
-    /// Switches the surface to a mode where the compositor blends it with the desktop
+    /// Switches the surface to a mode where the compositor blends it with the desktop, in order to support transparency
     fn make_transparent(&self, surface: &mut RenderSurface<'static>) {
         let handle = &self.context.devices[surface.dev_id];
         let modes = surface

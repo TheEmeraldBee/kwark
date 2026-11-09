@@ -1,26 +1,28 @@
 use std::time::Instant;
 
 use winit::dpi::{LogicalPosition, LogicalSize};
-use winit::event_loop::EventLoopProxy;
+use winit::event_loop::{EventLoopClosed, EventLoopProxy};
 pub use winit::window::ResizeDirection;
 use winit::window::Window;
 
 use crate::{Color, CursorIcon, Event, Fonts, Mods, Node, Point, Rect, Size};
 
-/// Options for the window that kui opens
+/// Options to change how the window is handled
 #[derive(Clone, Debug)]
 pub struct WindowOptions {
+    /// The title of the window
     pub title: String,
-    /// Inner size in logical pixels
+    /// The size of the window
     pub size: Size,
-    /// Color under everything the app draws
+    /// The background color of the window
     pub background: Color,
+    /// The decorations mode that this will use (title-bar)
     pub decorations: Decorations,
-    /// Whether the user can resize the window
+    /// Whether the window is resizable
     pub resizable: bool,
-    /// Whether the desktop shows through where the background color is not opaque
+    /// Whether the window needs to support transparency or not
     pub transparent: bool,
-    /// Whether the desktop behind a transparent window blurs, on desktops that support it
+    /// Whether or not to blur the window (transparency must be true)
     pub blur: bool,
 }
 
@@ -38,19 +40,19 @@ impl Default for WindowOptions {
     }
 }
 
-/// How the window frame looks
+/// The way window decorations are rendered
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Decorations {
-    /// The frame and title bar from the system
+    /// Take the one from the system
     #[default]
     System,
-    /// No frame, so the app draws its own title bar with `Cx::drag_window` and friends
+    /// Don't render native system decorations
     None,
-    /// Content under a transparent title bar on macOS, the system frame elsewhere
+    /// Try to use the transparent title bar on macOS, default to the system frame
     Overlay,
 }
 
-/// Access to the window from app code
+/// The window context
 pub struct Cx<'a> {
     pub(crate) fonts: &'a mut Fonts,
     pub(crate) window: &'a Window,
@@ -81,7 +83,7 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// Returns the inner size of the window in logical pixels
+    /// Returns the inner logical size of the window
     pub fn size(&self) -> Size {
         self.size
     }
@@ -91,30 +93,32 @@ impl<'a> Cx<'a> {
         self.scale
     }
 
-    /// Returns the modifier keys held now
+    /// Returns the modifier keys currently pressed
     pub fn mods(&self) -> Mods {
         self.mods
     }
 
+    /// Returns the fonts data
     pub fn fonts(&mut self) -> &mut Fonts {
         self.fonts
     }
 
-    /// Asks for a new frame
+    /// Tell the window to redraw
     pub fn request_redraw(&mut self) {
         self.redraw = true;
     }
 
+    /// Set the window title
     pub fn set_title(&mut self, title: &str) {
         self.window.set_title(title);
     }
 
-    /// Sets the pointer icon for places where no node sets one
+    /// Sets the default cursor icon
     pub fn set_cursor(&mut self, icon: CursorIcon) {
         self.cursor = Some(icon);
     }
 
-    /// Tells the input method where the text cursor is, so that its popup sits beside it
+    /// Tells the input where the text cursor is for IME to work
     pub fn set_ime_area(&mut self, area: Rect) {
         self.window.set_ime_cursor_area(
             LogicalPosition::new(area.left(), area.top()),
@@ -122,12 +126,12 @@ impl<'a> Cx<'a> {
         );
     }
 
-    /// Moves the window with the pointer, from a press on an app-drawn title bar
+    /// Moves the window with the pointer
     pub fn drag_window(&mut self) {
         let _ = self.window.drag_window();
     }
 
-    /// Resizes the window with the pointer, from a press near an edge
+    /// Resizes the window with the pointer
     pub fn drag_resize(&mut self, direction: ResizeDirection) {
         let _ = self.window.drag_resize_window(direction);
     }
@@ -164,29 +168,29 @@ impl<M: 'static> Clone for Proxy<M> {
 }
 
 impl<M: 'static> Proxy<M> {
-    /// Sends a message to `App::message`, returning it if the app closed
-    pub fn send(&self, message: M) -> Result<(), M> {
-        self.0.send_event(message).map_err(|e| e.0)
+    /// Sends a message to `App::message`, returns a winit error if it fails
+    pub fn send(&self, message: M) -> Result<(), EventLoopClosed<M>> {
+        self.0.send_event(message)
     }
 }
 
-/// An application that kui drives
+/// An application for kui
 pub trait App: 'static {
-    /// Data that element handlers receive
+    /// The State that the App handles
     type State: 'static;
 
     /// Messages from other threads
     type Message: Send + 'static;
 
-    /// Options for the window
+    /// Options to apply to the window
     fn window(&self) -> WindowOptions {
         WindowOptions::default()
     }
 
-    /// Sets up the app once the window exists
+    /// Sets up the app
     fn init(&mut self, _proxy: Proxy<Self::Message>, _cx: &mut Cx) {}
 
-    /// Returns the state that element handlers receive
+    /// Returns the state the App needs
     fn state(&mut self) -> &mut Self::State;
 
     /// Handles an input event that no element took

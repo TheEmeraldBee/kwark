@@ -8,17 +8,14 @@ use parley::PositionedLayoutItem;
 
 use crate::{Color, Corners, Fonts, Point, Rect, Size, TextLayout};
 
-/// Draws shapes and text into a frame, in logical pixels
+/// Draws shapes and text into a frame
 pub struct Painter<'a> {
     scene: &'a mut Scene,
     fonts: &'a mut Fonts,
-    /// Logical pixels to physical pixels
     transform: Affine,
     scale: f64,
-    /// The window in logical pixels
     bounds: Rect,
     pointer: Option<Point>,
-    /// Normalized font coords for the current run, kept to reuse the allocation
     coords: Vec<i16>,
 }
 
@@ -45,7 +42,7 @@ impl<'a> Painter<'a> {
         self.fonts
     }
 
-    /// Returns the pointer position, if the pointer is over the window
+    /// Returns the pointer position, or none if it's not on the window
     pub fn pointer(&self) -> Option<Point> {
         self.pointer
     }
@@ -169,7 +166,6 @@ impl<'a> Painter<'a> {
                 self.coords
                     .extend(run.normalized_coords().iter().map(|c| c.to_bits()));
 
-                // Glyphs go down in physical pixels with the baseline on a whole pixel, so hinting sees the real size
                 let baseline = f64::from(origin.y + glyphs.baseline()) * scale;
                 let shift = baseline.round() - baseline;
                 let device = |x: f32, y: f32| {

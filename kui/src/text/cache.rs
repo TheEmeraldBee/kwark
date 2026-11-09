@@ -35,7 +35,7 @@ impl Entry {
     }
 }
 
-/// Shaped lines kept across frames, keyed by their spans
+/// Lines kept across frames
 #[derive(Default)]
 pub(super) struct LineCache {
     /// Entries grouped by the hash of their spans
